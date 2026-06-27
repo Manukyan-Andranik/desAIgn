@@ -1,0 +1,219 @@
+Task: Object Detection Module for Architectural Render Understanding
+🎯 Goal
+
+Build a service that receives an architectural exterior render image and returns:
+
+A structured list of detected architectural objects
+Bounding boxes for each object
+Confidence scores
+Normalized object classes (standard taxonomy)
+
+This module is the first step of the Vision Pipeline.
+
+📥 Input
+Single image:
+Format: JPG / PNG
+Type: architectural exterior render (villa, house, building)
+Resolution: 512px – 4K
+
+Example:
+
+input_image: villa_render.png
+📤 Output (Required Schema)
+
+Return a structured JSON:
+
+{
+  "image_id": "uuid",
+  "objects": [
+    {
+      "id": "obj_1",
+      "class": "roof",
+      "bbox": [x1, y1, x2, y2],
+      "confidence": 0.94
+    },
+    {
+      "id": "obj_2",
+      "class": "window",
+      "bbox": [x1, y1, x2, y2],
+      "confidence": 0.88
+    }
+  ]
+}
+🧩 Object Classes (Initial Taxonomy)
+
+You must support these classes in MVP:
+
+🏠 Architecture
+building
+roof
+wall
+facade
+balcony
+column
+stairs
+🚪 Openings
+window
+door
+garage
+🌿 Landscape
+tree
+bush
+grass
+flower
+palm_tree
+🌊 Environment
+sky
+cloud
+mountain
+water
+🚗 Objects
+car
+person
+🧠 Recommended Model Strategy
+
+You MUST NOT train from scratch in MVP.
+
+Use a hybrid detection stack:
+
+Option A (Recommended MVP)
+1. Grounding DINO (Text-guided detection)
+
+Use prompts:
+
+"roof, window, door, wall, tree, pool, car, grass, balcony"
+
+Output:
+
+bounding boxes
+class labels
+Option B (Fast production fallback)
+YOLOv8 / YOLO11
+
+Fine-tune on architectural dataset.
+
+Best architecture:
+Image
+  ↓
+Grounding DINO (primary detector)
+  ↓
+Optional YOLO refinement layer
+  ↓
+Post-processing normalization
+🧹 Post-processing Layer (VERY IMPORTANT)
+
+You must implement:
+
+1. Class normalization
+
+Map raw outputs → standard taxonomy
+
+Example:
+
+Raw Output	Normalized
+"glass_window"	"window"
+"roof_tile"	"roof"
+"front_door"	"door"
+2. Duplicate merging
+
+Merge overlapping detections:
+
+IoU threshold: 0.5–0.7
+3. Confidence filtering
+remove objects with confidence < 0.4 (configurable)
+4. Hierarchy tagging (optional but recommended)
+"parent": "building"
+⚙️ API Design
+Endpoint
+POST /detect-objects
+Request
+{
+  "image_url": "s3://bucket/image.png",
+  "project_id": "123"
+}
+Response
+{
+  "project_id": "123",
+  "objects": [
+    {
+      "id": "roof_01",
+      "class": "roof",
+      "bbox": [120, 50, 480, 200],
+      "confidence": 0.95
+    }
+  ],
+  "processing_time_ms": 842
+}
+🧱 System Requirements
+Performance
+Max latency: 3–10 seconds per image (MVP)
+Batch support: yes (future)
+Scalability
+Must run on GPU (NVIDIA A10 / L4 recommended)
+Stateless service
+Horizontal scaling via Kubernetes
+Tech Stack
+Python 3.10+
+PyTorch
+FastAPI
+Docker
+CUDA support
+🧪 Evaluation Metrics
+
+You must track:
+
+Detection quality
+mAP@50
+Precision / Recall
+Architectural correctness (important for product)
+Roof detection accuracy
+Window detection accuracy
+Object completeness score
+Custom metric (VERY IMPORTANT)
+Scene Coverage Score
+Detected objects / Expected objects
+
+Goal: > 85% for good renders
+
+🧠 Edge Cases to Handle
+Night renders
+Fog / rain scenes
+Low-quality AI renders
+Highly stylized architecture
+Partial buildings (cropped images)
+Overexposed sunlight scenes
+🔁 Output Usage in System
+
+This module feeds:
+
+SAM 2 (segmentation)
+Scene Graph Builder
+Material Recognition
+Prompt-based editing engine
+🚀 Future Extension (DO NOT BUILD YET)
+
+Later upgrades:
+
+Instance segmentation (merge with SAM)
+3D reconstruction hints
+Temporal detection for video
+Material-aware detection
+📌 Definition of Done (DoD)
+
+The task is complete when:
+
+ System detects architectural objects reliably
+ Outputs normalized taxonomy
+ Works on diverse exterior renders
+ API is production-ready
+ Output integrates with SAM 2 pipeline
+ Latency < 10 seconds per image
+💡 Key Insight (important for architecture)
+
+This module is NOT just “object detection”.
+
+It is the entry point of Scene Understanding System.
+
+If this layer is wrong → everything downstream (masking, editing, video) becomes wrong.
+
+If this layer is good → you can build an entire AI architecture platform on top of it.

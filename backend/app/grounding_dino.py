@@ -17,6 +17,7 @@ import torch
 from PIL import Image
 from typing import List, Dict, Any, Tuple, Optional
 from app.logger import log_action
+from app.config import settings
 
 # ─── HuggingFace Transformers Grounding DINO ─────────────────────────────────
 HAS_TRANSFORMERS_GDINO = False
@@ -93,12 +94,12 @@ class GroundingDINODetector:
             return
 
         try:
-            model_id = "IDEA-Research/grounding-dino-base"
+            model_id = settings.GDINO_MODEL_ID
             self.processor = AutoProcessor.from_pretrained(model_id)
             self.model = AutoModelForZeroShotObjectDetection.from_pretrained(model_id)
             self.model.to(self.device)
             self.model.eval()
-            log_action("GDINO_INIT_SUCCESS", f"Loaded Grounding DINO Base (Swin-B) via HuggingFace Transformers ({self.device})")
+            log_action("GDINO_INIT_SUCCESS", f"Loaded Grounding DINO Base ({model_id}) via HuggingFace Transformers ({self.device})")
         except Exception as e:
             log_action("GDINO_INIT_ERROR", f"Grounding DINO init failed: {e}")
 
@@ -108,8 +109,8 @@ class GroundingDINODetector:
         image_id: str,
         room_type: Optional[str] = "Living Room",
         text_prompt: Optional[str] = None,
-        threshold: float = 0.50,
-        text_threshold: float = 0.50
+        threshold: float = settings.GDINO_BOX_THRESHOLD,
+        text_threshold: float = settings.GDINO_TEXT_THRESHOLD
     ) -> Tuple[List[Dict[str, Any]], float]:
         """
         Detect interior objects using text-prompted Grounding DINO.
@@ -194,7 +195,7 @@ class GroundingDINODetector:
                 })
 
             # Apply IoU Non-Maximum Suppression (NMS) to eliminate duplicate overlapping predictions
-            detections = self._apply_nms(detections, iou_threshold=0.55)
+            detections = self._apply_nms(detections, iou_threshold=settings.GDINO_NMS_THRESHOLD)
 
             log_action("GDINO_DETECT_SUCCESS", f"Detected {len(detections)} high-precision objects via Grounding DINO NMS")
             for det in detections:
@@ -207,7 +208,7 @@ class GroundingDINODetector:
         log_action("GDINO_DETECT_COMPLETE", f"Grounding DINO finished in {proc_time}ms with {len(detections)} detections")
         return detections, proc_time
 
-    def _apply_nms(self, detections: List[Dict[str, Any]], iou_threshold: float = 0.55) -> List[Dict[str, Any]]:
+    def _apply_nms(self, detections: List[Dict[str, Any]], iou_threshold: float = settings.GDINO_NMS_THRESHOLD) -> List[Dict[str, Any]]:
         """
         Class-Aware Non-Maximum Suppression: Filter out duplicate bounding box detections 
         of the SAME class while preserving overlapping distinct object classes (e.g., pillow on sofa, vase on table).

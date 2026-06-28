@@ -19,6 +19,7 @@ from PIL import Image
 from typing import List, Dict, Any
 from app.models import SceneGraph, SceneObject, Point, NormalVector, MaskSegmentation
 from app.logger import log_action
+from app.config import settings
 
 # ─── Import 3-Model Pipeline Modules ─────────────────────────────────────────
 from app.grounding_dino import grounding_dino_detector
@@ -126,8 +127,8 @@ class AntigravityVisionPipeline:
             file_bytes=file_bytes,
             image_id=image_id,
             room_type=room_type,
-            threshold=0.50,
-            text_threshold=0.50
+            threshold=settings.GDINO_BOX_THRESHOLD,
+            text_threshold=settings.GDINO_TEXT_THRESHOLD
         )
         
         # Adaptive confidence refinement: filter out raw predictions with low bounding box aspect ratio consistency

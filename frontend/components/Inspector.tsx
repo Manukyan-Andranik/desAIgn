@@ -2,7 +2,10 @@
 
 import React, { useState, useEffect } from "react";
 import { SceneObject, OrchestratorResponse } from "@/types/scene";
-import { Sparkles, Layers, ArrowRight, Wand2, Edit3, Check, X, Brain, Trash2, Gauge, Compass, Palette } from "lucide-react";
+import {
+  Sparkles, Layers, ArrowRight, Wand2, Edit3, Check, X, Brain, Trash2, Gauge,
+  Compass, Palette, ChevronLeft, ChevronRight, SlidersHorizontal
+} from "lucide-react";
 
 interface InspectorProps {
   selectedObject: SceneObject | null;
@@ -25,6 +28,7 @@ export default function Inspector({
   onOrchestrateEnd,
   width = 280
 }: InspectorProps) {
+  const [collapsed, setCollapsed] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -41,9 +45,34 @@ export default function Inspector({
     }
   }, [selectedObject?.id, selectedObject?.class]);
 
+  if (collapsed) {
+    return (
+      <aside className="w-11 h-full bg-[#0b0c10]/95 border-l border-slate-800/80 flex flex-col items-center py-4 justify-between transition-all select-none backdrop-blur-xl shrink-0 z-20 shadow-xl">
+        <button
+          onClick={() => setCollapsed(false)}
+          className="p-2 text-slate-400 hover:text-cyan-300 hover:bg-slate-800/80 rounded-xl transition-all shadow-sm"
+          title="Expand Inspector Panel"
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+        <div className="flex flex-col items-center space-y-3 font-mono text-[11px] text-slate-400 tracking-wider rotate-180 [writing-mode:vertical-lr]">
+          <span className="font-semibold text-slate-300">INSPECTOR</span>
+        </div>
+        <div className="w-2 h-2 rounded-full bg-blue-400 animate-pulse shadow-sm shadow-blue-400/50" />
+      </aside>
+    );
+  }
+
   if (!selectedObject) {
     return (
-      <aside style={{ width }} className="h-full bg-[#0b0c10]/95 border-l border-slate-800/80 p-6 flex flex-col items-center justify-center text-center select-none backdrop-blur-xl shrink-0 transition-none shadow-xl z-20">
+      <aside style={{ width }} className="h-full bg-[#0b0c10]/95 border-l border-slate-800/80 p-6 flex flex-col items-center justify-center text-center select-none backdrop-blur-xl shrink-0 transition-none shadow-xl z-20 relative">
+        <button
+          onClick={() => setCollapsed(true)}
+          className="absolute top-3 left-3 p-1.5 text-slate-400 hover:text-slate-100 hover:bg-slate-800/80 rounded-lg transition-all"
+          title="Collapse Panel"
+        >
+          <ChevronRight className="w-4 h-4" />
+        </button>
         <div className="w-14 h-14 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center mb-4 text-cyan-400 shadow-inner">
           <Layers className="w-7 h-7" />
         </div>
@@ -145,9 +174,24 @@ export default function Inspector({
   ];
 
   return (
-    <aside style={{ width }} className="h-full bg-[#0b0c10]/95 border-l border-slate-800/80 p-4 flex flex-col justify-between overflow-y-auto select-none backdrop-blur-xl shrink-0 transition-none shadow-xl z-20">
+    <aside style={{ width }} className="h-full bg-[#0b0c10]/95 border-l border-slate-800/80 p-4 flex flex-col justify-between overflow-y-auto select-none backdrop-blur-xl shrink-0 transition-none shadow-xl z-20 relative">
       <div className="space-y-4">
         
+        {/* Panel Collapse Header Bar */}
+        <div className="flex items-center justify-between pb-2 border-b border-slate-800/60">
+          <div className="flex items-center space-x-2">
+            <SlidersHorizontal className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="text-xs font-bold text-slate-200 uppercase tracking-wide">Inspector Control</span>
+          </div>
+          <button
+            onClick={() => setCollapsed(true)}
+            className="p-1 text-slate-400 hover:text-slate-100 hover:bg-slate-800/80 rounded-lg transition-all"
+            title="Collapse Sidebar"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+
         {/* Interactive Object Class Header */}
         <div className="bg-slate-900/60 p-3.5 rounded-2xl border border-slate-800/80 shadow-lg space-y-3">
           <div className="flex items-center justify-between">
@@ -277,7 +321,7 @@ export default function Inspector({
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               placeholder={`e.g. "Replace this ${selectedObject.class} with dark emerald velvet"`}
-              rows={2}
+              rows={3}
               className="w-full bg-slate-950 border border-slate-800 focus:border-cyan-500 rounded-xl p-2.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none transition-all resize-none font-sans leading-relaxed shadow-inner"
             />
 

@@ -68,10 +68,10 @@ export default function StudioPage() {
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (isDraggingLeft) {
-        const newWidth = Math.min(Math.max(e.clientX, 160), 500);
+        const newWidth = Math.min(Math.max(e.clientX, 160), Math.max(window.innerWidth - 300, 300));
         setLeftWidth(newWidth);
       } else if (isDraggingRight) {
-        const newWidth = Math.min(Math.max(window.innerWidth - e.clientX, 200), 550);
+        const newWidth = Math.min(Math.max(window.innerWidth - e.clientX, 180), Math.max(window.innerWidth - 300, 300));
         setRightWidth(newWidth);
       }
     };

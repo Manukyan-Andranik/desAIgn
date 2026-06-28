@@ -5,7 +5,8 @@ import dynamic from "next/dynamic";
 import { SceneGraph, SceneObject, OrchestratorResponse } from "@/types/scene";
 import LayersSidebar from "@/components/LayersSidebar";
 import Inspector from "@/components/Inspector";
-import { Sparkles, Upload, RefreshCw, Cpu, CheckCircle2, Scan, Loader2, Home, Palette, Sliders, Layers, ArrowRight, X } from "lucide-react";
+import HomePage from "@/components/HomePage";
+import { Sparkles, Upload, RefreshCw, Cpu, CheckCircle2, Scan, Loader2, Home, Palette, Sliders, Layers, ArrowRight, X, LayoutDashboard } from "lucide-react";
 
 const InteractiveCanvas = dynamic(() => import("@/components/InteractiveCanvas"), {
   ssr: false,
@@ -37,6 +38,7 @@ const STYLE_OPTIONS = [
 ];
 
 export default function StudioPage() {
+  const [viewMode, setViewMode] = useState<"home" | "studio">("home");
   const [sceneGraph, setSceneGraph] = useState<SceneGraph | null>(null);
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null);
   const [selectedObjectIds, setSelectedObjectIds] = useState<string[]>([]);
@@ -115,10 +117,14 @@ export default function StudioPage() {
     }
   };
 
-  useEffect(() => {
+  const handleSelectDemo = (demoId: string, demoRoom: string, demoStyle: string) => {
+    setRoomType(demoRoom);
+    setDesignStyle(demoStyle);
+    setImageId(demoId);
     setSelectedObjectIds([]);
-    fetchSceneGraph(imageId);
-  }, [imageId]);
+    fetchSceneGraph(demoId);
+    setViewMode("studio");
+  };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -144,6 +150,7 @@ export default function StudioPage() {
           setSelectedObjectId(data.objects[0].id);
           setSelectedObjectIds([data.objects[0].id]);
         }
+        setViewMode("studio");
         showToast(`Analyzed ${roomType} (${data.objects.length} high-confidence elements).`, `${designStyle}`, "success");
       }
     } catch (err) {
@@ -269,24 +276,34 @@ export default function StudioPage() {
       {/* Navigation & Context Selector Bar */}
       <header className="h-13 bg-[#0c0e14]/90 border-b border-slate-800/80 px-5 flex items-center justify-between z-20 shrink-0 backdrop-blur-md">
         <div className="flex items-center space-x-4">
-          <div className="flex items-center space-x-2.5">
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-blue-600 to-cyan-400 flex items-center justify-center font-bold text-white text-xs shadow-md shadow-blue-500/20">
+          <button
+            onClick={() => setViewMode("home")}
+            className="flex items-center space-x-2.5 group focus:outline-none"
+            title="Return to Home Dashboard"
+          >
+            <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-blue-600 to-cyan-400 flex items-center justify-center font-bold text-white text-xs shadow-md shadow-blue-500/20 group-hover:scale-105 transition-transform">
               A
             </div>
-            <span className="font-bold text-sm tracking-tight text-slate-100">Antigravity</span>
-          </div>
+            <span className="font-bold text-sm tracking-tight text-slate-100 group-hover:text-cyan-300 transition-colors">Antigravity</span>
+          </button>
 
           <span className="text-slate-800 font-bold hidden sm:inline">|</span>
 
-          {/* Quick Setup Modal Launcher */}
-          <button
-            onClick={() => setShowSetupModal(true)}
-            className="flex items-center space-x-2 bg-slate-900/90 hover:bg-slate-800 border border-slate-700/70 px-3 py-1 rounded-lg text-xs font-medium text-slate-200 transition-all shadow-sm group"
-          >
-            <Sliders className="w-3.5 h-3.5 text-cyan-400 group-hover:rotate-45 transition-transform" />
-            <span>{roomType} • {designStyle}</span>
-            <span className="text-[10px] text-cyan-400 font-mono bg-cyan-950/80 px-1.5 py-0.5 rounded border border-cyan-800/60 ml-1">Setup</span>
-          </button>
+          {viewMode === "studio" ? (
+            <button
+              onClick={() => setShowSetupModal(true)}
+              className="flex items-center space-x-2 bg-slate-900/90 hover:bg-slate-800 border border-slate-700/70 px-3 py-1 rounded-lg text-xs font-medium text-slate-200 transition-all shadow-sm group"
+            >
+              <Sliders className="w-3.5 h-3.5 text-cyan-400 group-hover:rotate-45 transition-transform" />
+              <span>{roomType} • {designStyle}</span>
+              <span className="text-[10px] text-cyan-400 font-mono bg-cyan-950/80 px-1.5 py-0.5 rounded border border-cyan-800/60 ml-1">Setup</span>
+            </button>
+          ) : (
+            <div className="flex items-center space-x-1.5 text-xs text-slate-400 font-mono">
+              <LayoutDashboard className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Studio Landing Hub</span>
+            </div>
+          )}
         </div>
 
         {/* Minimal Actions */}
@@ -298,25 +315,39 @@ export default function StudioPage() {
             </div>
           )}
 
-          <button
-            onClick={() => setShowBBoxes(!showBBoxes)}
-            className={`px-2.5 py-1 rounded-lg text-xs font-mono transition-all border ${
-              showBBoxes
-                ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/40 font-medium"
-                : "bg-slate-800/50 text-slate-400 border-slate-700/60 hover:text-slate-200"
-            }`}
-            title="Toggle Bounding Boxes"
-          >
-            Boxes: {showBBoxes ? "ON" : "OFF"}
-          </button>
+          {viewMode === "studio" && (
+            <>
+              <button
+                onClick={() => setShowBBoxes(!showBBoxes)}
+                className={`px-2.5 py-1 rounded-lg text-xs font-mono transition-all border ${
+                  showBBoxes
+                    ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/40 font-medium"
+                    : "bg-slate-800/50 text-slate-400 border-slate-700/60 hover:text-slate-200"
+                }`}
+                title="Toggle Bounding Boxes"
+              >
+                Boxes: {showBBoxes ? "ON" : "OFF"}
+              </button>
 
-          <button
-            onClick={() => fetchSceneGraph(imageId)}
-            className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 rounded-lg transition-all"
-            title="Refresh Scene Graph"
-          >
-            <RefreshCw className="w-3.5 h-3.5" />
-          </button>
+              <button
+                onClick={() => fetchSceneGraph(imageId)}
+                className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 rounded-lg transition-all"
+                title="Refresh Scene Graph"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+              </button>
+            </>
+          )}
+
+          {viewMode === "studio" && (
+            <button
+              onClick={() => setViewMode("home")}
+              className="px-3 py-1.5 bg-slate-800/80 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium flex items-center space-x-1.5 transition-all"
+            >
+              <Home className="w-3.5 h-3.5" />
+              <span>Home Hub</span>
+            </button>
+          )}
 
           <button
             onClick={() => fileInputRef.current?.click()}
@@ -329,69 +360,79 @@ export default function StudioPage() {
         </div>
       </header>
 
-      {/* Main Studio Workspace with Resizable Control Panels */}
-      <div className="flex-1 flex overflow-hidden relative">
-        <LayersSidebar
-          sceneGraph={sceneGraph}
-          selectedObjectId={selectedObjectId}
-          selectedObjectIds={selectedObjectIds}
-          onSelectObject={(id) => setSelectedObjectId(id)}
-          onToggleSelectObject={handleToggleSelectObject}
-          onMergeObjects={handleMergeObjects}
-          onDeleteObject={handleObjectDeleted}
-          width={leftWidth}
+      {/* View Mode Router: Home Landing vs Interactive Studio Workspace */}
+      {viewMode === "home" ? (
+        <HomePage
+          onUploadClick={() => fileInputRef.current?.click()}
+          onSelectDemo={handleSelectDemo}
+          selectedRoomType={roomType}
+          selectedDesignStyle={designStyle}
+          onOpenSetupModal={() => setShowSetupModal(true)}
         />
-
-        {/* Left Resizer Handle */}
-        <div
-          onMouseDown={() => setIsDraggingLeft(true)}
-          className="w-1.5 h-full cursor-col-resize bg-slate-800/40 hover:bg-cyan-500/50 active:bg-cyan-500 transition-colors shrink-0 z-30 flex items-center justify-center group"
-          title="Drag to resize left panel width"
-        >
-          <div className="w-0.5 h-6 bg-slate-600 group-hover:bg-cyan-300 rounded" />
-        </div>
-
-        <main className="flex-1 h-full relative">
-          <InteractiveCanvas
+      ) : (
+        <div className="flex-1 flex overflow-hidden relative">
+          <LayersSidebar
             sceneGraph={sceneGraph}
             selectedObjectId={selectedObjectId}
-            hoveredObjectId={hoveredObjectId}
-            showBBoxes={showBBoxes}
-            onSelectObject={(id) => handleToggleSelectObject(id, false)}
-            onHoverObject={(id) => setHoveredObjectId(id)}
+            selectedObjectIds={selectedObjectIds}
+            onSelectObject={(id) => setSelectedObjectId(id)}
+            onToggleSelectObject={handleToggleSelectObject}
+            onMergeObjects={handleMergeObjects}
+            onDeleteObject={handleObjectDeleted}
+            width={leftWidth}
           />
 
-          {/* Minimal Glassmorphism Loading Overlay */}
-          {(uploading || isOrchestrating) && (
-            <div className="absolute inset-0 z-40 bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center animate-fade-in p-4 select-none">
-              <div className="px-6 py-4 rounded-2xl border border-slate-700/80 bg-slate-900/90 shadow-2xl flex items-center space-x-3.5 font-mono text-xs text-slate-200">
-                <Loader2 className="w-5 h-5 text-cyan-400 animate-spin" />
-                <span>{uploading ? `Running ${roomType} Vision Pipeline (50%+ Confidence Filter)...` : "Synthesizing AI Edit..."}</span>
+          {/* Left Resizer Handle */}
+          <div
+            onMouseDown={() => setIsDraggingLeft(true)}
+            className="w-1.5 h-full cursor-col-resize bg-slate-800/40 hover:bg-cyan-500/50 active:bg-cyan-500 transition-colors shrink-0 z-30 flex items-center justify-center group"
+            title="Drag to resize left panel width"
+          >
+            <div className="w-0.5 h-6 bg-slate-600 group-hover:bg-cyan-300 rounded" />
+          </div>
+
+          <main className="flex-1 h-full relative">
+            <InteractiveCanvas
+              sceneGraph={sceneGraph}
+              selectedObjectId={selectedObjectId}
+              hoveredObjectId={hoveredObjectId}
+              showBBoxes={showBBoxes}
+              onSelectObject={(id) => handleToggleSelectObject(id, false)}
+              onHoverObject={(id) => setHoveredObjectId(id)}
+            />
+
+            {/* Minimal Glassmorphism Loading Overlay */}
+            {(uploading || isOrchestrating) && (
+              <div className="absolute inset-0 z-40 bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center animate-fade-in p-4 select-none">
+                <div className="px-6 py-4 rounded-2xl border border-slate-700/80 bg-slate-900/90 shadow-2xl flex items-center space-x-3.5 font-mono text-xs text-slate-200">
+                  <Loader2 className="w-5 h-5 text-cyan-400 animate-spin" />
+                  <span>{uploading ? `Running ${roomType} Vision Pipeline (50%+ Confidence Filter)...` : "Synthesizing AI Edit..."}</span>
+                </div>
               </div>
-            </div>
-          )}
-        </main>
+            )}
+          </main>
 
-        {/* Right Resizer Handle */}
-        <div
-          onMouseDown={() => setIsDraggingRight(true)}
-          className="w-1.5 h-full cursor-col-resize bg-slate-800/40 hover:bg-cyan-500/50 active:bg-cyan-500 transition-colors shrink-0 z-30 flex items-center justify-center group"
-          title="Drag to resize right panel width"
-        >
-          <div className="w-0.5 h-6 bg-slate-600 group-hover:bg-cyan-300 rounded" />
+          {/* Right Resizer Handle */}
+          <div
+            onMouseDown={() => setIsDraggingRight(true)}
+            className="w-1.5 h-full cursor-col-resize bg-slate-800/40 hover:bg-cyan-500/50 active:bg-cyan-500 transition-colors shrink-0 z-30 flex items-center justify-center group"
+            title="Drag to resize right panel width"
+          >
+            <div className="w-0.5 h-6 bg-slate-600 group-hover:bg-cyan-300 rounded" />
+          </div>
+
+          <Inspector
+            selectedObject={selectedObject}
+            imageId={imageId}
+            onOrchestratorSuccess={handleOrchestratorSuccess}
+            onClassUpdated={handleClassUpdated}
+            onObjectDeleted={handleObjectDeleted}
+            onOrchestrateStart={() => setIsOrchestrating(true)}
+            onOrchestrateEnd={() => setIsOrchestrating(false)}
+            width={rightWidth}
+          />
         </div>
-
-        <Inspector
-          selectedObject={selectedObject}
-          imageId={imageId}
-          onOrchestratorSuccess={handleOrchestratorSuccess}
-          onClassUpdated={handleClassUpdated}
-          onObjectDeleted={handleObjectDeleted}
-          onOrchestrateStart={() => setIsOrchestrating(true)}
-          onOrchestrateEnd={() => setIsOrchestrating(false)}
-          width={rightWidth}
-        />
-      </div>
+      )}
 
       {/* Interactive Room Function & Architectural Style Setup Modal */}
       {showSetupModal && (

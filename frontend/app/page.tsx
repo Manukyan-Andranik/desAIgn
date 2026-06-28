@@ -2,12 +2,13 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
-import { SceneGraph, SceneObject, OrchestratorResponse } from "@/types/scene";
+import { SceneGraph, SceneObject, OrchestratorResponse, User, Project } from "@/types/scene";
 import LayersSidebar from "@/components/LayersSidebar";
 import Inspector from "@/components/Inspector";
 import HomePage from "@/components/HomePage";
 import ProgressLoader from "@/components/ProgressLoader";
-import { Sparkles, Upload, RefreshCw, Cpu, CheckCircle2, Scan, Loader2, Home, Palette, Sliders, Layers, ArrowRight, X, LayoutDashboard } from "lucide-react";
+import UserSwitcher from "@/components/UserSwitcher";
+import { Sparkles, Upload, RefreshCw, Cpu, CheckCircle2, Scan, Loader2, Home, Palette, Sliders, Layers, ArrowRight, X, LayoutDashboard, Plus, Trash2 } from "lucide-react";
 
 const InteractiveCanvas = dynamic(() => import("@/components/InteractiveCanvas"), {
   ssr: false,
@@ -153,13 +154,73 @@ export default function StudioPage() {
     }
   };
 
-  const handleSelectDemo = (demoId: string, demoRoom: string, demoStyle: string) => {
-    setRoomType(demoRoom);
-    setDesignStyle(demoStyle);
-    setImageId(demoId);
+  // Multi-User & Multi-Project State
+  const [users, setUsers] = useState<User[]>([]);
+  const [activeUser, setActiveUser] = useState<User | null>(null);
+  const [projects, setProjects] = useState<Project[]>([]);
+
+  const fetchUsers = async () => {
+    try {
+      const res = await fetch("http://localhost:8000/api/v1/users");
+      if (res.ok) {
+        const data: User[] = await res.json();
+        setUsers(data);
+        if (data.length > 0) {
+          const savedUserId = typeof window !== "undefined" ? localStorage.getItem("antigravity_userId") : null;
+          const found = data.find(u => u.id === savedUserId) || data[0];
+          setActiveUser(found);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch users:", err);
+    }
+  };
+
+  const fetchUserProjects = async (userId: string) => {
+    try {
+      const res = await fetch(`http://localhost:8000/api/v1/users/${userId}/projects`);
+      if (res.ok) {
+        const data: Project[] = await res.json();
+        setProjects(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch user projects:", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchUsers();
+  }, []);
+
+  useEffect(() => {
+    if (activeUser) {
+      if (typeof window !== "undefined") {
+        localStorage.setItem("antigravity_userId", activeUser.id);
+      }
+      fetchUserProjects(activeUser.id);
+    }
+  }, [activeUser?.id]);
+
+  const handleSelectProject = (proj: Project) => {
+    setRoomType(proj.room_type);
+    setDesignStyle(proj.design_style);
+    setImageId(proj.image_id);
     setSelectedObjectIds([]);
-    fetchSceneGraph(demoId);
+    fetchSceneGraph(proj.image_id);
     setViewMode("studio");
+    showToast(`Launched Studio for '${proj.title}'`, "Project OS", "info");
+  };
+
+  const handleDeleteProject = async (projectId: string) => {
+    try {
+      const res = await fetch(`http://localhost:8000/api/v1/projects/${projectId}`, { method: "DELETE" });
+      if (res.ok && activeUser) {
+        fetchUserProjects(activeUser.id);
+        showToast("Deleted project from workspace.", "Project OS", "info");
+      }
+    } catch (err) {
+      console.error("Failed to delete project:", err);
+    }
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -172,6 +233,8 @@ export default function StudioPage() {
     formData.append("file", file);
     formData.append("room_type", roomType);
     formData.append("design_style", designStyle);
+    formData.append("user_id", activeUser?.id || "usr_alex");
+    formData.append("project_title", `${roomType} (${file.name})`);
 
     try {
       const res = await fetch("http://localhost:8000/api/v1/analyze", {
@@ -185,6 +248,9 @@ export default function StudioPage() {
         if (data.objects.length > 0) {
           setSelectedObjectId(data.objects[0].id);
           setSelectedObjectIds([data.objects[0].id]);
+        }
+        if (activeUser) {
+          fetchUserProjects(activeUser.id);
         }
         setViewMode("studio");
         showToast(`Analyzed ${roomType} (${data.objects.length} high-confidence elements).`, `${designStyle}`, "success");
@@ -444,6 +510,16 @@ export default function StudioPage() {
             </button>
           )}
 
+          {/* Active User Switcher */}
+          <UserSwitcher
+            users={users}
+            activeUser={activeUser}
+            onSelectUser={(u) => {
+              setActiveUser(u);
+              showToast(`Switched workspace user to ${u.name}`, "User Manager", "info");
+            }}
+          />
+
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading || isOrchestrating}
@@ -458,8 +534,11 @@ export default function StudioPage() {
       {/* View Mode Router: Home Landing vs Interactive Studio Workspace */}
       {viewMode === "home" ? (
         <HomePage
+          activeUser={activeUser}
+          projects={projects}
           onUploadClick={() => fileInputRef.current?.click()}
-          onSelectDemo={handleSelectDemo}
+          onSelectProject={handleSelectProject}
+          onDeleteProject={handleDeleteProject}
           selectedRoomType={roomType}
           selectedDesignStyle={designStyle}
           onOpenSetupModal={() => setShowSetupModal(true)}

@@ -64,9 +64,27 @@ export interface OrchestratorAction {
 }
 
 export interface OrchestratorResponse {
-  status: string;
-  action: OrchestratorAction;
+  message: string;
+  applied_actions?: OrchestratorAction[];
+  updated_scene_graph?: SceneGraph;
   updated_object?: SceneObject;
   updated_image_url?: string;
-  message: string;
+}
+
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  avatar?: string;
+}
+
+export interface Project {
+  id: string;
+  user_id: string;
+  title: string;
+  image_id: string;
+  room_type: string;
+  design_style: string;
+  image_url?: string;
+  object_count?: number;
 }

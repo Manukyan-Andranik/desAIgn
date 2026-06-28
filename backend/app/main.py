@@ -13,6 +13,7 @@ from app import db_models
 from app.models import (
     SceneGraph, SceneObject, SceneRelationship, Point, NormalVector, MaskSegmentation, SegmentationData,
     OrchestratorRequest, OrchestratorResponse, UpdateObjectClassRequest, MergeObjectsRequest, AddCustomObjectRequest,
+    UserSchema, ProjectSchema, CreateProjectRequest,
     DetectionRequest, DetectionResponse, DetectedObjectItem,
     SegmentSceneResponse, SegmentSceneItem,
     InteriorSegmentationResponse, InteriorObjectInstance,
@@ -303,11 +304,99 @@ async def detect_objects_endpoint(file: UploadFile = File(...)):
         objects=output_objects
     )
 
+@app.get("/api/v1/users", response_model=list[UserSchema])
+def get_users(db: Session = Depends(get_db)):
+    users = db.query(db_models.UserRecord).all()
+    if not users:
+        demo_users = [
+            db_models.UserRecord(id="usr_alex", name="Alex Rivera", email="alex@architects.io", avatar="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80"),
+            db_models.UserRecord(id="usr_sarah", name="Sarah Lin", email="sarah@designstudio.com", avatar="https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&auto=format&fit=crop&q=80"),
+            db_models.UserRecord(id="usr_studio", name="Studio Pro", email="pro@antigravity.os", avatar="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&auto=format&fit=crop&q=80")
+        ]
+        for u in demo_users:
+            db.add(u)
+        db.commit()
+        users = db.query(db_models.UserRecord).all()
+    return [UserSchema(id=u.id, name=u.name, email=u.email, avatar=u.avatar) for u in users]
+
+@app.get("/api/v1/users/{user_id}/projects", response_model=list[ProjectSchema])
+def get_user_projects(user_id: str, db: Session = Depends(get_db)):
+    projects = db.query(db_models.ProjectRecord).filter(db_models.ProjectRecord.user_id == user_id).all()
+    if not projects and user_id in ["usr_alex", "usr_sarah", "usr_studio"]:
+        if user_id == "usr_alex":
+            p1 = db_models.ProjectRecord(id="proj_japandi_01", user_id="usr_alex", title="Japandi Villa Sanctuary", image_id="demo_render_01", room_type="Living Room", design_style="Japandi Minimalist")
+            db.add(p1)
+        elif user_id == "usr_sarah":
+            p2 = db_models.ProjectRecord(id="proj_nordic_02", user_id="usr_sarah", title="Nordic Artisan Bakery", image_id="demo_render_02", room_type="Cafe & Restaurant", design_style="Scandinavian Modern")
+            db.add(p2)
+        else:
+            p3 = db_models.ProjectRecord(id="proj_biophilic_03", user_id="usr_studio", title="Biophilic Executive Suite", image_id="demo_render_03", room_type="Office & Study", design_style="Biophilic Luxury")
+            db.add(p3)
+        db.commit()
+        projects = db.query(db_models.ProjectRecord).filter(db_models.ProjectRecord.user_id == user_id).all()
+    
+    result = []
+    for p in projects:
+        sg = db.query(db_models.SceneGraphRecord).filter(db_models.SceneGraphRecord.id == p.image_id).first()
+        img_url = sg.image_url if sg else None
+        obj_count = len(sg.objects) if sg and sg.objects else 0
+        result.append(ProjectSchema(
+            id=p.id,
+            user_id=p.user_id,
+            title=p.title,
+            image_id=p.image_id,
+            room_type=p.room_type,
+            design_style=p.design_style,
+            image_url=img_url,
+            object_count=obj_count
+        ))
+    return result
+
+@app.post("/api/v1/projects", response_model=ProjectSchema)
+def create_project(req: CreateProjectRequest, db: Session = Depends(get_db)):
+    proj_id = f"proj_{uuid.uuid4().hex[:8]}"
+    p = db_models.ProjectRecord(
+        id=proj_id,
+        user_id=req.user_id,
+        title=req.title,
+        image_id=req.image_id,
+        room_type=req.room_type,
+        design_style=req.design_style
+    )
+    db.add(p)
+    db.commit()
+    
+    sg = db.query(db_models.SceneGraphRecord).filter(db_models.SceneGraphRecord.id == req.image_id).first()
+    img_url = sg.image_url if sg else None
+    obj_count = len(sg.objects) if sg and sg.objects else 0
+    
+    return ProjectSchema(
+        id=p.id,
+        user_id=p.user_id,
+        title=p.title,
+        image_id=p.image_id,
+        room_type=p.room_type,
+        design_style=p.design_style,
+        image_url=img_url,
+        object_count=obj_count
+    )
+
+@app.delete("/api/v1/projects/{project_id}")
+def delete_project(project_id: str, db: Session = Depends(get_db)):
+    p = db.query(db_models.ProjectRecord).filter(db_models.ProjectRecord.id == project_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Project not found")
+    db.delete(p)
+    db.commit()
+    return {"status": "success", "message": f"Deleted project '{project_id}'"}
+
 @app.post("/api/v1/analyze", response_model=SceneGraph)
 async def analyze_render(
     file: UploadFile = File(None),
     room_type: str = Form("Living Room"),
     design_style: str = Form("Japandi Minimalist"),
+    user_id: str = Form("usr_alex"),
+    project_title: str = Form(None),
     db: Session = Depends(get_db)
 ):
     image_id = f"render_{uuid.uuid4().hex[:8]}"
@@ -330,6 +419,20 @@ async def analyze_render(
         design_style=design_style
     )
     save_scene_graph_to_db(db, scene_graph)
+
+    # Automatically register project for user
+    p_title = project_title if project_title else f"{room_type} Project ({datetime.utcnow().strftime('%b %d')})"
+    proj_record = db_models.ProjectRecord(
+        id=f"proj_{uuid.uuid4().hex[:8]}",
+        user_id=user_id,
+        title=p_title,
+        image_id=image_id,
+        room_type=room_type,
+        design_style=design_style
+    )
+    db.add(proj_record)
+    db.commit()
+
     return scene_graph
 
 @app.get("/api/v1/scene-graph/{image_id}", response_model=SceneGraph)

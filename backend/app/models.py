@@ -62,6 +62,29 @@ class AddCustomObjectRequest(BaseModel):
     class Config:
         populate_by_name = True
 
+class UserSchema(BaseModel):
+    id: str
+    name: str
+    email: str
+    avatar: Optional[str] = None
+
+class ProjectSchema(BaseModel):
+    id: str
+    user_id: str
+    title: str
+    image_id: str
+    room_type: str = "Living Room"
+    design_style: str = "Japandi Minimalist"
+    image_url: Optional[str] = None
+    object_count: Optional[int] = 0
+
+class CreateProjectRequest(BaseModel):
+    user_id: str
+    title: str
+    image_id: str
+    room_type: str = "Living Room"
+    design_style: str = "Japandi Minimalist"
+
 class SceneRelationship(BaseModel):
     subject_id: str = Field(..., description="Subject object ID")
     predicate: str = Field(..., description="Spatial or structural relation (on, next_to, mounted_on, beside, under, above)")

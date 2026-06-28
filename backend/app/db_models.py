@@ -3,6 +3,30 @@ from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.database import Base
 
+class UserRecord(Base):
+    __tablename__ = "users"
+
+    id = Column(String, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    email = Column(String, nullable=False)
+    avatar = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    projects = relationship("ProjectRecord", back_populates="user", cascade="all, delete-orphan")
+
+class ProjectRecord(Base):
+    __tablename__ = "projects"
+
+    id = Column(String, primary_key=True, index=True)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    title = Column(String, nullable=False)
+    image_id = Column(String, nullable=False)
+    room_type = Column(String, default="Living Room")
+    design_style = Column(String, default="Japandi Minimalist")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("UserRecord", back_populates="projects")
+
 class SceneGraphRecord(Base):
     __tablename__ = "scene_graphs"
 

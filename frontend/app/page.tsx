@@ -275,10 +275,13 @@ export default function StudioPage() {
       />
 
       {/* Navigation & Context Selector Bar */}
-      <header className="h-13 bg-[#0c0e14]/90 border-b border-slate-800/80 px-5 flex items-center justify-between z-20 shrink-0 backdrop-blur-md">
-        <div className="flex items-center space-x-4">
+      <header className="h-14 bg-[#0c0e14]/95 border-b border-slate-800/80 px-5 flex items-center justify-between z-20 shrink-0 backdrop-blur-md">
+        <div className="flex items-center space-x-5">
           <button
-            onClick={() => setViewMode("home")}
+            onClick={() => {
+              setViewMode("home");
+              showToast("Navigated to Home Landing Hub", "Studio Navigation", "info");
+            }}
             className="flex items-center space-x-2.5 group focus:outline-none"
             title="Return to Home Dashboard"
           >
@@ -288,22 +291,47 @@ export default function StudioPage() {
             <span className="font-bold text-sm tracking-tight text-slate-100 group-hover:text-cyan-300 transition-colors">Antigravity</span>
           </button>
 
-          <span className="text-slate-800 font-bold hidden sm:inline">|</span>
+          {/* High-Visibility Page Switching Pills */}
+          <div className="flex items-center space-x-1 bg-slate-950/90 p-1 rounded-xl border border-slate-800/80 font-mono text-xs shadow-inner">
+            <button
+              onClick={() => {
+                setViewMode("home");
+                showToast("Navigated to Home Landing Hub", "Studio Navigation", "info");
+              }}
+              className={`px-3 py-1 rounded-lg transition-all flex items-center space-x-1.5 ${
+                viewMode === "home"
+                  ? "bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-bold shadow-md shadow-cyan-500/25"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              <Home className="w-3.5 h-3.5" />
+              <span>Home</span>
+            </button>
+            <button
+              onClick={() => {
+                setViewMode("studio");
+                showToast(`Navigated to Studio Workspace (${roomType})`, "Studio Navigation", "info");
+              }}
+              className={`px-3 py-1 rounded-lg transition-all flex items-center space-x-1.5 ${
+                viewMode === "studio"
+                  ? "bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-bold shadow-md shadow-cyan-500/25"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>Studio Workspace</span>
+            </button>
+          </div>
 
-          {viewMode === "studio" ? (
+          {viewMode === "studio" && (
             <button
               onClick={() => setShowSetupModal(true)}
-              className="flex items-center space-x-2 bg-slate-900/90 hover:bg-slate-800 border border-slate-700/70 px-3 py-1 rounded-lg text-xs font-medium text-slate-200 transition-all shadow-sm group"
+              className="hidden md:flex items-center space-x-2 bg-slate-900/90 hover:bg-slate-800 border border-slate-700/70 px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-200 transition-all shadow-sm group"
             >
               <Sliders className="w-3.5 h-3.5 text-cyan-400 group-hover:rotate-45 transition-transform" />
               <span>{roomType} • {designStyle}</span>
               <span className="text-[10px] text-cyan-400 font-mono bg-cyan-950/80 px-1.5 py-0.5 rounded border border-cyan-800/60 ml-1">Setup</span>
             </button>
-          ) : (
-            <div className="flex items-center space-x-1.5 text-xs text-slate-400 font-mono">
-              <LayoutDashboard className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Studio Landing Hub</span>
-            </div>
           )}
         </div>
 

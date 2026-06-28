@@ -37,6 +37,12 @@ export interface SceneObject {
   sub_components?: string[];
 }
 
+export interface SceneRelationship {
+  subject_id: string;
+  predicate: string;
+  object_id: string;
+}
+
 export interface SceneGraph {
   image_id: string;
   image_url?: string;
@@ -44,6 +50,7 @@ export interface SceneGraph {
   height: number;
   version: number;
   objects: SceneObject[];
+  relationships?: SceneRelationship[];
 }
 
 export interface OrchestratorAction {

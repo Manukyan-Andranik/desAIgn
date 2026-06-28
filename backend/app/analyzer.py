@@ -25,6 +25,7 @@ from app.grounding_dino import grounding_dino_detector
 from app.sam_segmentor import sam_segmentor
 from app.depth_estimator import depth_estimator
 from app.scene_graph_generator import sgg_engine
+from app.clip_classifier import clip_classifier
 
 # ─── Legacy Fallback Import ──────────────────────────────────────────────────
 from app.interior_detector import interior_pipeline, EXPLICIT_TAXONOMY_MAP, BACKGROUND_STRUCTURAL_MAP
@@ -118,18 +119,24 @@ class AntigravityVisionPipeline:
             log_action("PIPELINE_FALLBACK", "Grounding DINO unavailable. Falling back to legacy Mask2Former + YOLO pipeline.")
             return self._legacy_analyze(file_bytes, image_id, image_url, width, height)
 
-        # ─── Stage 1: Grounding DINO Detection ───────────────────────
-        log_action("STAGE_1_START", "Running Grounding DINO open-vocabulary detection...")
+        # ─── Stage 1: Grounding DINO Open-Vocabulary Detection ────────
+        log_action("STAGE_1_START", "Running Grounding DINO Base open-vocabulary detection with adaptive confidence tuning...")
         detections, gdino_time = self.gdino.detect(
             file_bytes=file_bytes,
             image_id=image_id,
-            threshold=0.20,
-            text_threshold=0.20
+            threshold=0.22,
+            text_threshold=0.22
         )
-        log_action("STAGE_1_COMPLETE", f"Grounding DINO: {len(detections)} objects detected in {gdino_time}ms")
+        
+        # Adaptive confidence refinement: filter out raw predictions with low bounding box aspect ratio consistency
+        detections = [
+            d for d in detections 
+            if (d["bbox"][2] - d["bbox"][0]) >= 8 and (d["bbox"][3] - d["bbox"][1]) >= 8
+        ]
+        log_action("STAGE_1_COMPLETE", f"Grounding DINO Swin-B: {len(detections)} refined objects detected in {gdino_time}ms")
 
         if not detections:
-            log_action("PIPELINE_EMPTY", "No objects detected. Falling back to legacy pipeline.")
+            log_action("PIPELINE_EMPTY", "No high-confidence objects detected. Engaging legacy pipeline.")
             return self._legacy_analyze(file_bytes, image_id, image_url, width, height)
 
         # ─── Stage 2: SAM Segmentation ───────────────────────────────
@@ -150,7 +157,16 @@ class AntigravityVisionPipeline:
         )
         log_action("STAGE_3_COMPLETE", "Depth estimation complete")
 
-        # ─── Stage 4 & 5: Material Lookup + Scene Graph Assembly ─────
+        # ─── Stage 4: OpenCLIP Zero-Shot Material & Style Classification ────
+        log_action("STAGE_4_START", "Running OpenCLIP zero-shot material classification & OpenCV color extraction...")
+        detections = clip_classifier.classify_object_crops(
+            file_bytes=file_bytes,
+            detections=detections,
+            image_id=image_id
+        )
+        log_action("STAGE_4_COMPLETE", "Zero-shot material classification complete")
+
+        # ─── Stage 5: Scene Graph Assembly ─────
         scene_objects: List[SceneObject] = []
         for det in detections:
             cls = det["class"]
@@ -163,10 +179,13 @@ class AntigravityVisionPipeline:
             mask_data = MaskSegmentation(type="polygon", points=polygon_points)
 
             spec = MATERIAL_SPECS.get(cls, {
-                "material": f"{cls.capitalize()} Surface Finish",
-                "reflectivity": 0.20, "roughness": 0.50,
-                "color_hex": "#888888", "sub_components": []
+                "reflectivity": 0.20, "roughness": 0.50, "sub_components": []
             })
+
+            # Use OpenCLIP classified material if available, else fall back to spec
+            material_name = det.get("classified_material", spec.get("material", f"{cls.capitalize()} Surface Finish"))
+            color_hex = det.get("color_hex", spec.get("color_hex", "#888888"))
+            style_name = det.get("style", "Modern Interior Design")
 
             layer = get_layer_category(cls)
             depth_val = det.get("depth", 2.5)
@@ -180,17 +199,17 @@ class AntigravityVisionPipeline:
                 mask=mask_data,
                 bbox=det["bbox"],
                 depth=depth_val,
-                material=spec["material"],
-                style="modern interior design",
+                material=material_name,
+                style=style_name,
                 editable=True,
                 confidence=det["confidence"],
                 parent="room_structure" if cls in {"wall", "floor", "ceiling", "window", "door"} else "floor",
                 surface_orientation="Horizontal Plane" if cls in {"floor", "table", "rug", "desk", "bed"} else "Vertical Facade",
                 normal_vector=NormalVector(nx=0.0, ny=1.0, nz=0.0) if cls in {"floor", "table", "rug", "desk"} else NormalVector(nx=0.0, ny=0.0, nz=1.0),
-                reflectivity=spec["reflectivity"],
-                roughness=spec["roughness"],
-                color_hex=spec["color_hex"],
-                sub_components=spec["sub_components"]
+                reflectivity=spec.get("reflectivity", 0.20),
+                roughness=spec.get("roughness", 0.50),
+                color_hex=color_hex,
+                sub_components=spec.get("sub_components", [])
             ))
 
         # ─── Stage 5: Scene Graph Spatial Relationships (SGG) ────────

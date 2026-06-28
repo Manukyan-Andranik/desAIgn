@@ -11,7 +11,7 @@ from PIL import Image
 from app.database import engine, Base, get_db
 from app import db_models
 from app.models import (
-    SceneGraph, SceneObject, Point, NormalVector, MaskSegmentation, SegmentationData,
+    SceneGraph, SceneObject, SceneRelationship, Point, NormalVector, MaskSegmentation, SegmentationData,
     OrchestratorRequest, OrchestratorResponse,
     DetectionRequest, DetectionResponse, DetectedObjectItem,
     SegmentSceneResponse, SegmentSceneItem,
@@ -37,6 +37,17 @@ app = FastAPI(
 @app.on_event("startup")
 def on_startup():
     db_models.Base.metadata.create_all(bind=engine)
+    try:
+        from sqlalchemy import inspect, text
+        inspector = inspect(engine)
+        if "scene_graphs" in inspector.get_table_names():
+            columns = [c["name"] for c in inspector.get_columns("scene_graphs")]
+            if "relationships" not in columns:
+                with engine.connect() as conn:
+                    conn.execute(text("ALTER TABLE scene_graphs ADD COLUMN relationships JSON"))
+                    conn.commit()
+    except Exception as e:
+        print(f"[DB Migration Warning] {e}")
 
 app.add_middleware(
     CORSMiddleware,
@@ -59,12 +70,14 @@ def save_scene_graph_to_db(db: Session, sg: SceneGraph) -> db_models.SceneGraphR
             image_url=sg.image_url,
             width=sg.width,
             height=sg.height,
-            version=sg.version
+            version=sg.version,
+            relationships=[r.model_dump() for r in sg.relationships] if sg.relationships else None
         )
         db.add(rec)
     else:
         rec.version = sg.version
         rec.image_url = sg.image_url
+        rec.relationships = [r.model_dump() for r in sg.relationships] if sg.relationships else None
         db.query(db_models.SceneObjectRecord).filter(db_models.SceneObjectRecord.scene_graph_id == sg.image_id).delete()
 
     for obj in sg.objects:
@@ -135,13 +148,16 @@ def load_scene_graph_from_db(db: Session, image_id: str) -> SceneGraph:
             sub_components=obj_rec.sub_components or []
         ))
 
+    relationships = [SceneRelationship(**r) for r in rec.relationships] if rec.relationships else []
+
     return SceneGraph(
         image_id=rec.id,
         image_url=rec.image_url,
         width=rec.width,
         height=rec.height,
         version=rec.version,
-        objects=objects
+        objects=objects,
+        relationships=relationships
     )
 
 @app.post("/segment-interior", response_model=InteriorSegmentationResponse)

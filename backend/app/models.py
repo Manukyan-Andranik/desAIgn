@@ -44,6 +44,11 @@ class SceneObject(BaseModel):
     class Config:
         populate_by_name = True
 
+class SceneRelationship(BaseModel):
+    subject_id: str = Field(..., description="Subject object ID")
+    predicate: str = Field(..., description="Spatial or structural relation (on, next_to, mounted_on, beside, under, above)")
+    object_id: str = Field(..., description="Target object ID")
+
 class SceneGraph(BaseModel):
     image_id: str
     image_url: Optional[str] = None
@@ -51,6 +56,7 @@ class SceneGraph(BaseModel):
     height: int
     version: int = 1
     objects: List[SceneObject] = Field(default_factory=list)
+    relationships: List[SceneRelationship] = Field(default_factory=list)
 
 class DetectionRequest(BaseModel):
     image_url: Optional[str] = Field(None, description="URL of image to detect")

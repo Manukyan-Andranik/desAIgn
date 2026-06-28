@@ -24,6 +24,7 @@ from app.logger import log_action
 from app.grounding_dino import grounding_dino_detector
 from app.sam_segmentor import sam_segmentor
 from app.depth_estimator import depth_estimator
+from app.scene_graph_generator import sgg_engine
 
 # ─── Legacy Fallback Import ──────────────────────────────────────────────────
 from app.interior_detector import interior_pipeline, EXPLICIT_TAXONOMY_MAP, BACKGROUND_STRUCTURAL_MAP
@@ -122,7 +123,7 @@ class AntigravityVisionPipeline:
         detections, gdino_time = self.gdino.detect(
             file_bytes=file_bytes,
             image_id=image_id,
-            box_threshold=0.25,
+            threshold=0.20,
             text_threshold=0.20
         )
         log_action("STAGE_1_COMPLETE", f"Grounding DINO: {len(detections)} objects detected in {gdino_time}ms")
@@ -192,8 +193,11 @@ class AntigravityVisionPipeline:
                 sub_components=spec["sub_components"]
             ))
 
+        # ─── Stage 5: Scene Graph Spatial Relationships (SGG) ────────
+        relationships = sgg_engine.generate_relationships(scene_objects)
+
         pipeline_time = round((time.time() - pipeline_start) * 1000.0, 2)
-        log_action("PIPELINE_COMPLETE", f"3-Model Pipeline finished: {len(scene_objects)} scene objects in {pipeline_time}ms")
+        log_action("PIPELINE_COMPLETE", f"5-Stage Production Pipeline finished: {len(scene_objects)} objects, {len(relationships)} relationships in {pipeline_time}ms")
 
         return SceneGraph(
             image_id=image_id,
@@ -201,7 +205,8 @@ class AntigravityVisionPipeline:
             width=width,
             height=height,
             version=1,
-            objects=scene_objects
+            objects=scene_objects,
+            relationships=relationships
         )
 
     def _legacy_analyze(self, file_bytes: bytes, image_id: str, image_url: str, width: int, height: int) -> SceneGraph:

@@ -11,6 +11,7 @@ class SceneGraphRecord(Base):
     width = Column(Integer, nullable=False)
     height = Column(Integer, nullable=False)
     version = Column(Integer, default=1)
+    relationships = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

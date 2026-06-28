@@ -57,8 +57,8 @@ export default function StudioPage() {
   const [isOrchestrating, setIsOrchestrating] = useState(false);
 
   // Resizable Panel Width States
-  const [leftWidth, setLeftWidth] = useState(240);
-  const [rightWidth, setRightWidth] = useState(280);
+  const [leftWidth, setLeftWidth] = useState(250);
+  const [rightWidth, setRightWidth] = useState(250);
   const [isDraggingLeft, setIsDraggingLeft] = useState(false);
   const [isDraggingRight, setIsDraggingRight] = useState(false);
 
@@ -107,7 +107,7 @@ export default function StudioPage() {
         const newWidth = Math.min(Math.max(e.clientX, 160), Math.max(window.innerWidth - 300, 300));
         setLeftWidth(newWidth);
       } else if (isDraggingRight) {
-        const newWidth = Math.min(Math.max(window.innerWidth - e.clientX, 180), Math.max(window.innerWidth - 300, 300));
+        const newWidth = Math.min(Math.max(window.innerWidth - e.clientX, 160), Math.max(window.innerWidth - 300, 300));
         setRightWidth(newWidth);
       }
     };

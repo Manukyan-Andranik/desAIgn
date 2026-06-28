@@ -2,16 +2,17 @@
 
 import React, { useState } from "react";
 import { SceneGraph } from "@/types/scene";
-import { Box, CheckCircle2, Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { Box, CheckCircle2, Search, ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
 
 interface LayersSidebarProps {
   sceneGraph: SceneGraph | null;
   selectedObjectId: string | null;
   onSelectObject: (id: string) => void;
+  onDeleteObject?: (id: string) => void;
   width?: number;
 }
 
-export default function LayersSidebar({ sceneGraph, selectedObjectId, onSelectObject, width = 240 }: LayersSidebarProps) {
+export default function LayersSidebar({ sceneGraph, selectedObjectId, onSelectObject, onDeleteObject, width = 240 }: LayersSidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [activeTab, setActiveTab] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -117,10 +118,10 @@ export default function LayersSidebar({ sceneGraph, selectedObjectId, onSelectOb
             filteredObjects.map((obj) => {
               const isSelected = selectedObjectId === obj.id;
               return (
-                <button
+                <div
                   key={obj.id}
                   onClick={() => onSelectObject(obj.id)}
-                  className={`w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between text-xs transition-all ${
+                  className={`w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between text-xs transition-all cursor-pointer group/item ${
                     isSelected
                       ? "bg-blue-600/20 text-blue-200 border border-blue-500/40 font-medium"
                       : "text-slate-400 hover:bg-slate-800/40 hover:text-slate-200 border border-transparent"
@@ -132,10 +133,24 @@ export default function LayersSidebar({ sceneGraph, selectedObjectId, onSelectOb
                       <div className="truncate font-mono font-medium text-xs">{obj.class}</div>
                     </div>
                   </div>
-                  <span className="font-mono text-[10px] text-slate-500 shrink-0 ml-1">
-                    {(obj.confidence * 100).toFixed(0)}%
-                  </span>
-                </button>
+                  <div className="flex items-center space-x-1 shrink-0">
+                    {onDeleteObject && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDeleteObject(obj.id);
+                        }}
+                        className="opacity-0 group-hover/item:opacity-100 p-1 text-slate-500 hover:text-red-400 hover:bg-red-950/40 rounded transition-all"
+                        title="Delete object"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    )}
+                    <span className="font-mono text-[10px] text-slate-500 ml-1">
+                      {(obj.confidence * 100).toFixed(0)}%
+                    </span>
+                  </div>
+                </div>
               );
             })
           )}

@@ -355,6 +355,26 @@ def update_object_class(req: UpdateObjectClassRequest, db: Session = Depends(get
     
     return {"status": "success", "message": f"Updated class '{orig_class}' to '{req.new_class}'. Model learned new taxonomy.", "updated_object": target_obj}
 
+@app.delete("/api/v1/object/{image_id}/{object_id}")
+def delete_object(image_id: str, object_id: str, db: Session = Depends(get_db)):
+    scene_graph = load_scene_graph_from_db(db, image_id)
+    initial_count = len(scene_graph.objects)
+    scene_graph.objects = [o for o in scene_graph.objects if o.id != object_id]
+    
+    if len(scene_graph.objects) == initial_count:
+        raise HTTPException(status_code=404, detail="Object not found in scene graph")
+        
+    # Clean up connected spatial relationships
+    if scene_graph.relationships:
+        scene_graph.relationships = [
+            r for r in scene_graph.relationships 
+            if r.subject_id != object_id and r.object_id != object_id
+        ]
+        
+    scene_graph.version += 1
+    save_scene_graph_to_db(db, scene_graph)
+    return {"status": "success", "message": f"Deleted object '{object_id}' from scene graph.", "deleted_object_id": object_id}
+
 @app.post("/api/v1/orchestrate", response_model=OrchestratorResponse)
 async def orchestrate_prompt(request: OrchestratorRequest, db: Session = Depends(get_db)):
     scene_graph = load_scene_graph_from_db(db, request.image_id)

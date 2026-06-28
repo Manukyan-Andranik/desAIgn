@@ -2,13 +2,14 @@
 
 import React, { useState, useEffect } from "react";
 import { SceneObject, OrchestratorResponse } from "@/types/scene";
-import { Sparkles, Layers, ArrowRight, Wand2, Edit3, Check, X, Brain } from "lucide-react";
+import { Sparkles, Layers, ArrowRight, Wand2, Edit3, Check, X, Brain, Trash2 } from "lucide-react";
 
 interface InspectorProps {
   selectedObject: SceneObject | null;
   imageId: string;
   onOrchestratorSuccess: (response: OrchestratorResponse) => void;
   onClassUpdated?: (updatedObject: SceneObject) => void;
+  onObjectDeleted?: (deletedObjectId: string) => void;
   onOrchestrateStart?: (prompt: string) => void;
   onOrchestrateEnd?: () => void;
   width?: number;
@@ -19,6 +20,7 @@ export default function Inspector({
   imageId,
   onOrchestratorSuccess,
   onClassUpdated,
+  onObjectDeleted,
   onOrchestrateStart,
   onOrchestrateEnd,
   width = 280
@@ -30,6 +32,7 @@ export default function Inspector({
   const [isEditingClass, setIsEditingClass] = useState(false);
   const [newClassName, setNewClassName] = useState("");
   const [isSavingClass, setIsSavingClass] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     if (selectedObject) {
@@ -84,6 +87,25 @@ export default function Inspector({
     }
   };
 
+  const handleDeleteObject = async () => {
+    if (!selectedObject) return;
+    setIsDeleting(true);
+    try {
+      const res = await fetch(`http://localhost:8000/api/v1/object/${imageId}/${selectedObject.id}`, {
+        method: "DELETE"
+      });
+      if (res.ok) {
+        if (onObjectDeleted) {
+          onObjectDeleted(selectedObject.id);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to delete object:", err);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const handleOrchestrateWithText = async (textToUse: string) => {
     if (!textToUse.trim()) return;
 
@@ -125,7 +147,7 @@ export default function Inspector({
   return (
     <aside style={{ width }} className="h-full bg-[#0c0e14]/90 border-l border-slate-800/80 p-4.5 flex flex-col justify-between overflow-y-auto select-none backdrop-blur-md shrink-0 transition-none">
       <div className="space-y-4">
-        {/* Interactive Object Class Header with Active Learning Controls */}
+        {/* Interactive Object Class Header with Active Learning Controls & Delete Button */}
         <div>
           <div className="flex items-center justify-between">
             {isEditingClass ? (
@@ -171,9 +193,19 @@ export default function Inspector({
               </div>
             )}
 
-            <span className="text-[10px] font-mono text-slate-500 shrink-0">
-              {selectedObject.id}
-            </span>
+            <div className="flex items-center space-x-1.5 shrink-0">
+              <span className="text-[10px] font-mono text-slate-500">
+                {selectedObject.id}
+              </span>
+              <button
+                onClick={handleDeleteObject}
+                disabled={isDeleting}
+                className="p-1 text-slate-500 hover:text-red-400 hover:bg-red-950/40 rounded transition-all"
+                title="Delete object from scene graph"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
 
           <div className="flex items-center justify-between mt-2.5">

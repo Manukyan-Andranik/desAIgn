@@ -175,6 +175,33 @@ export default function StudioPage() {
     });
   };
 
+  const handleObjectDeleted = async (deletedId: string) => {
+    try {
+      const res = await fetch(`http://localhost:8000/api/v1/object/${imageId}/${deletedId}`, {
+        method: "DELETE"
+      });
+      if (res.ok) {
+        showToast(`Deleted object from scene graph.`, "Scene Graph Engine", "info");
+        if (selectedObjectId === deletedId) {
+          setSelectedObjectId(null);
+        }
+        setSceneGraph((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            version: prev.version + 1,
+            objects: prev.objects.filter((obj) => obj.id !== deletedId),
+            relationships: (prev.relationships || []).filter(
+              (r) => r.subject_id !== deletedId && r.object_id !== deletedId
+            )
+          };
+        });
+      }
+    } catch (err) {
+      console.error("Failed to delete object:", err);
+    }
+  };
+
   const selectedObject = sceneGraph?.objects.find((obj) => obj.id === selectedObjectId) || null;
 
   return (
@@ -256,6 +283,7 @@ export default function StudioPage() {
           sceneGraph={sceneGraph}
           selectedObjectId={selectedObjectId}
           onSelectObject={(id) => setSelectedObjectId(id)}
+          onDeleteObject={handleObjectDeleted}
           width={leftWidth}
         />
 
@@ -303,6 +331,7 @@ export default function StudioPage() {
           imageId={imageId}
           onOrchestratorSuccess={handleOrchestratorSuccess}
           onClassUpdated={handleClassUpdated}
+          onObjectDeleted={handleObjectDeleted}
           onOrchestrateStart={() => setIsOrchestrating(true)}
           onOrchestrateEnd={() => setIsOrchestrating(false)}
           width={rightWidth}

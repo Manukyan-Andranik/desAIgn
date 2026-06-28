@@ -162,8 +162,14 @@ class GroundingDINODetector:
             for i in range(len(boxes)):
                 box = boxes[i].tolist()
                 score = float(scores[i])
-                raw_label = str(labels[i]).strip().lower()
-                if raw_label in ["a", "an", "the", "in", "on", "at"]:
+                
+                # Safe label extraction with bounds protection
+                if i < len(labels):
+                    raw_label = str(labels[i]).strip().lower()
+                else:
+                    raw_label = "object"
+
+                if not raw_label or raw_label in ["a", "an", "the", "in", "on", "at"]:
                     continue
 
                 # Normalize class name
@@ -176,7 +182,11 @@ class GroundingDINODetector:
                         if clean_key in raw_label:
                             matched = target
                             break
-                    norm_label = matched if matched else raw_label.replace("a ", "").replace("an ", "").split()[0]
+                    if matched:
+                        norm_label = matched
+                    else:
+                        parts = raw_label.replace("a ", "").replace("an ", "").split()
+                        norm_label = parts[0] if parts else "object"
 
                 x1, y1, x2, y2 = int(box[0]), int(box[1]), int(box[2]), int(box[3])
                 # Clamp to image bounds

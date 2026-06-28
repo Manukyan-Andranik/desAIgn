@@ -378,10 +378,16 @@ def delete_object(image_id: str, object_id: str, db: Session = Depends(get_db)):
 @app.post("/api/v1/object/merge")
 def merge_objects(req: MergeObjectsRequest, db: Session = Depends(get_db)):
     scene_graph = load_scene_graph_from_db(db, req.image_id)
+    valid_ids = set(o.id for o in scene_graph.objects)
     target_objs = [o for o in scene_graph.objects if o.id in req.object_ids]
     
     if len(target_objs) < 2:
-        raise HTTPException(status_code=400, detail="At least 2 valid objects must be selected to perform a merge operation.")
+        found_ids = [o.id for o in target_objs]
+        missing_ids = [oid for oid in req.object_ids if oid not in valid_ids]
+        raise HTTPException(
+            status_code=400, 
+            detail=f"At least 2 valid objects matching image '{req.image_id}' must be selected. Found {len(target_objs)} valid ({found_ids}), missing ({missing_ids})."
+        )
 
     primary_target = target_objs[0]
     other_targets = target_objs[1:]

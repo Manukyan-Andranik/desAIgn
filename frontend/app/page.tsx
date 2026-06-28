@@ -102,8 +102,13 @@ export default function StudioPage() {
       setSceneGraph(data);
       if (data.room_type) setRoomType(data.room_type);
       if (data.design_style) setDesignStyle(data.design_style);
+
+      const validIds = new Set(data.objects.map(o => o.id));
+      setSelectedObjectIds(prev => prev.filter(oid => validIds.has(oid)));
+      
       if (data.objects.length > 0 && !selectedObjectId) {
         setSelectedObjectId(data.objects[0].id);
+        setSelectedObjectIds([data.objects[0].id]);
       }
     } catch (err) {
       console.error("Failed to fetch scene graph:", err);
@@ -111,6 +116,7 @@ export default function StudioPage() {
   };
 
   useEffect(() => {
+    setSelectedObjectIds([]);
     fetchSceneGraph(imageId);
   }, [imageId]);
 
@@ -119,6 +125,7 @@ export default function StudioPage() {
     if (!file) return;
 
     setUploading(true);
+    setSelectedObjectIds([]);
     const formData = new FormData();
     formData.append("file", file);
     formData.append("room_type", roomType);
@@ -135,6 +142,7 @@ export default function StudioPage() {
         setImageId(data.image_id);
         if (data.objects.length > 0) {
           setSelectedObjectId(data.objects[0].id);
+          setSelectedObjectIds([data.objects[0].id]);
         }
         showToast(`Analyzed ${roomType} (${data.objects.length} high-confidence elements).`, `${designStyle}`, "success");
       }
@@ -204,7 +212,12 @@ export default function StudioPage() {
     }
   };
 
-  const handleToggleSelectObject = (id: string, isMulti: boolean) => {
+  const handleToggleSelectObject = (id: string | null, isMulti: boolean) => {
+    if (!id) {
+      setSelectedObjectId(null);
+      setSelectedObjectIds([]);
+      return;
+    }
     if (isMulti) {
       setSelectedObjectIds((prev) =>
         prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
@@ -344,7 +357,7 @@ export default function StudioPage() {
             selectedObjectId={selectedObjectId}
             hoveredObjectId={hoveredObjectId}
             showBBoxes={showBBoxes}
-            onSelectObject={(id) => setSelectedObjectId(id)}
+            onSelectObject={(id) => handleToggleSelectObject(id, false)}
             onHoverObject={(id) => setHoveredObjectId(id)}
           />
 

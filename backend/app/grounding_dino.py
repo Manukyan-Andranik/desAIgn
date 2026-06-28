@@ -15,7 +15,7 @@ import time
 import numpy as np
 import torch
 from PIL import Image
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional
 from app.logger import log_action
 
 # ─── HuggingFace Transformers Grounding DINO ─────────────────────────────────
@@ -26,15 +26,18 @@ try:
 except ImportError:
     pass
 
-# ─── Interior Detection Text Prompt (period-separated format) ────────────────
-# Format required by Grounding DINO: "a <noun>. a <noun>."
-INTERIOR_DETECTION_PROMPT = (
-    "a table. a sofa. a chair. a lamp. a plant. a door. a window. "
-    "a rug. a shelf. a television. a wardrobe. a pillow. a clock. "
-    "a painting. a mirror. a curtain. a bed. a desk. a cabinet. "
-    "a vase. a bookshelf. a coffee table. a fireplace. a pendant light. "
-    "a floor lamp. a wall lamp. an ottoman."
-)
+# ─── Interior Detection Text Prompt Matrix (period-separated format) ─────────
+ROOM_PROMPTS = {
+    "Living Room": "a sectional sofa. a coffee table. a armchair. a floor lamp. a TV console. a rug. a fireplace. a bookshelf. a wall painting. a pillow. a plant. a window. a door.",
+    "Kitchen": "a kitchen island. a refrigerator. an oven. a stove. a microwave. a pantry cabinet. a dining stool. a pendant light. a kitchen counter. a sink. a faucet. a window.",
+    "Bedroom": "a bed. a nightstand. a headboard. a wardrobe. a dresser. a table lamp. a pillow. a blanket. a mirror. a rug. a curtain. a window. a door.",
+    "Bathroom": "a bathtub. a shower enclosure. a bathroom vanity. a sink. a mirror. a towel rack. a toilet. a ceramic tile. a window.",
+    "Office & Study": "a executive desk. a office chair. a bookcase. a desktop monitor. a desk lamp. a storage cabinet. a filing cabinet. a rug. a window. a door.",
+    "Cafe & Restaurant": "a espresso machine. a cafe table. a dining chair. a bar counter. a menu board. a pendant light. a pastry display. a decorative plant. a bar stool.",
+    "Outdoor Patio": "a patio sofa. a lounge chair. a outdoor table. a pergola. a fire pit. a patio planter. a sun umbrella. a deck planking."
+}
+
+INTERIOR_DETECTION_PROMPT = ROOM_PROMPTS["Living Room"]
 
 # ─── Class Normalization Map ─────────────────────────────────────────────────
 GDINO_CLASS_NORMALIZE = {
@@ -103,7 +106,8 @@ class GroundingDINODetector:
         self,
         file_bytes: bytes,
         image_id: str,
-        text_prompt: str = INTERIOR_DETECTION_PROMPT,
+        room_type: Optional[str] = "Living Room",
+        text_prompt: Optional[str] = None,
         threshold: float = 0.20,
         text_threshold: float = 0.20
     ) -> Tuple[List[Dict[str, Any]], float]:
@@ -127,13 +131,15 @@ class GroundingDINODetector:
         if not self.model or not self.processor or not file_bytes:
             return detections, 0.0
 
-        log_action("GDINO_DETECT_START", f"Running Grounding DINO on image '{image_id}'")
+        # Resolve room-specific detection prompt matrix
+        active_prompt = text_prompt if text_prompt else ROOM_PROMPTS.get(room_type, INTERIOR_DETECTION_PROMPT)
+        log_action("GDINO_DETECT_START", f"Running Grounding DINO on image '{image_id}' with room '{room_type}' prompt matrix")
 
         try:
             img = Image.open(io.BytesIO(file_bytes)).convert("RGB")
             w, h = img.size
 
-            inputs = self.processor(images=img, text=text_prompt, return_tensors="pt").to(self.device)
+            inputs = self.processor(images=img, text=active_prompt, return_tensors="pt").to(self.device)
 
             with torch.no_grad():
                 outputs = self.model(**inputs)
@@ -202,7 +208,10 @@ class GroundingDINODetector:
         return detections, proc_time
 
     def _apply_nms(self, detections: List[Dict[str, Any]], iou_threshold: float = 0.55) -> List[Dict[str, Any]]:
-        """Filter out duplicate bounding box detections based on IoU overlap."""
+        """
+        Class-Aware Non-Maximum Suppression: Filter out duplicate bounding box detections 
+        of the SAME class while preserving overlapping distinct object classes (e.g., pillow on sofa, vase on table).
+        """
         if not detections:
             return []
 
@@ -211,10 +220,15 @@ class GroundingDINODetector:
 
         for det in sorted_dets:
             b1 = det["bbox"]
+            cls1 = det["class"]
             area1 = (b1[2] - b1[0]) * (b1[3] - b1[1])
             duplicate = False
 
             for kept in keep:
+                # Only compare bounding boxes of the SAME object class
+                if kept["class"] != cls1:
+                    continue
+
                 b2 = kept["bbox"]
                 # Compute intersection
                 ix1, iy1 = max(b1[0], b2[0]), max(b1[1], b2[1])

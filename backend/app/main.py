@@ -1,7 +1,7 @@
 import os
 import uuid
 import io
-from fastapi import FastAPI, HTTPException, UploadFile, File, Depends, Query
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
@@ -303,7 +303,12 @@ async def detect_objects_endpoint(file: UploadFile = File(...)):
     )
 
 @app.post("/api/v1/analyze", response_model=SceneGraph)
-async def analyze_render(file: UploadFile = File(None), db: Session = Depends(get_db)):
+async def analyze_render(
+    file: UploadFile = File(None),
+    room_type: str = Form("Living Room"),
+    design_style: str = Form("Japandi Minimalist"),
+    db: Session = Depends(get_db)
+):
     image_id = f"render_{uuid.uuid4().hex[:8]}"
     image_url = None
     file_bytes = b""
@@ -316,7 +321,13 @@ async def analyze_render(file: UploadFile = File(None), db: Session = Depends(ge
             f.write(file_bytes)
         image_url = f"http://localhost:8000/uploads/{filename}"
 
-    scene_graph = process_uploaded_image(file_bytes=file_bytes, image_id=image_id, image_url=image_url)
+    scene_graph = process_uploaded_image(
+        file_bytes=file_bytes,
+        image_id=image_id,
+        image_url=image_url,
+        room_type=room_type,
+        design_style=design_style
+    )
     save_scene_graph_to_db(db, scene_graph)
     return scene_graph
 

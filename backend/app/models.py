@@ -55,6 +55,8 @@ class SceneGraph(BaseModel):
     width: int
     height: int
     version: int = 1
+    room_type: Optional[str] = Field("Living Room", description="Target room function")
+    design_style: Optional[str] = Field("Japandi Minimalist", description="Architectural design style")
     objects: List[SceneObject] = Field(default_factory=list)
     relationships: List[SceneRelationship] = Field(default_factory=list)
 

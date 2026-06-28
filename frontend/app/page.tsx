@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import { SceneGraph, OrchestratorResponse } from "@/types/scene";
 import LayersSidebar from "@/components/LayersSidebar";
 import Inspector from "@/components/Inspector";
-import { Sparkles, Upload, RefreshCw, Cpu, CheckCircle2, Scan, Loader2 } from "lucide-react";
+import { Sparkles, Upload, RefreshCw, Cpu, CheckCircle2, Scan, Loader2, Home, Palette } from "lucide-react";
 
 const InteractiveCanvas = dynamic(() => import("@/components/InteractiveCanvas"), {
   ssr: false,
@@ -17,6 +17,25 @@ const InteractiveCanvas = dynamic(() => import("@/components/InteractiveCanvas")
   )
 });
 
+const ROOM_OPTIONS = [
+  "Living Room",
+  "Kitchen",
+  "Bedroom",
+  "Bathroom",
+  "Office & Study",
+  "Cafe & Restaurant",
+  "Outdoor Patio"
+];
+
+const STYLE_OPTIONS = [
+  "Japandi Minimalist",
+  "Scandinavian Modern",
+  "Industrial Brutalist",
+  "Biophilic Luxury",
+  "Mid-Century Modern",
+  "Classic Art Deco"
+];
+
 export default function StudioPage() {
   const [sceneGraph, setSceneGraph] = useState<SceneGraph | null>(null);
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null);
@@ -24,6 +43,10 @@ export default function StudioPage() {
   const [showBBoxes, setShowBBoxes] = useState<boolean>(false);
   const [notification, setNotification] = useState<{ message: string; model?: string; type?: "info" | "success" | "ai" } | null>(null);
   
+  // Target Room & Architectural Style Selection
+  const [roomType, setRoomType] = useState<string>("Living Room");
+  const [designStyle, setDesignStyle] = useState<string>("Japandi Minimalist");
+
   // Loading states
   const [uploading, setUploading] = useState(false);
   const [isOrchestrating, setIsOrchestrating] = useState(false);
@@ -75,6 +98,8 @@ export default function StudioPage() {
       if (!res.ok) return;
       const data: SceneGraph = await res.json();
       setSceneGraph(data);
+      if (data.room_type) setRoomType(data.room_type);
+      if (data.design_style) setDesignStyle(data.design_style);
       if (data.objects.length > 0 && !selectedObjectId) {
         setSelectedObjectId(data.objects[0].id);
       }
@@ -94,6 +119,8 @@ export default function StudioPage() {
     setUploading(true);
     const formData = new FormData();
     formData.append("file", file);
+    formData.append("room_type", roomType);
+    formData.append("design_style", designStyle);
 
     try {
       const res = await fetch("http://localhost:8000/api/v1/analyze", {
@@ -107,7 +134,7 @@ export default function StudioPage() {
         if (data.objects.length > 0) {
           setSelectedObjectId(data.objects[0].id);
         }
-        showToast(`Analyzed render (${data.objects.length} elements).`, "Vision Engine", "success");
+        showToast(`Analyzed ${roomType} (${data.objects.length} elements).`, `${designStyle}`, "success");
       }
     } catch (err) {
       console.error("File upload error:", err);
@@ -147,14 +174,49 @@ export default function StudioPage() {
         className="hidden"
       />
 
-      {/* Sleek Minimalist Navigation Bar */}
+      {/* Sleek Minimalist Navigation & Context Selector Bar */}
       <header className="h-13 bg-[#0c0e14]/90 border-b border-slate-800/80 px-5 flex items-center justify-between z-20 shrink-0 backdrop-blur-md">
-        <div className="flex items-center space-x-3">
-          <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-blue-600 to-cyan-400 flex items-center justify-center font-bold text-white text-xs shadow-md shadow-blue-500/20">
-            A
+        <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-2.5">
+            <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-blue-600 to-cyan-400 flex items-center justify-center font-bold text-white text-xs shadow-md shadow-blue-500/20">
+              A
+            </div>
+            <span className="font-bold text-sm tracking-tight text-slate-100">Antigravity</span>
           </div>
-          <span className="font-bold text-sm tracking-tight text-slate-100">Antigravity</span>
-          <span className="text-xs text-slate-500 font-mono hidden sm:inline">• Studio OS</span>
+
+          <span className="text-slate-800 font-bold hidden sm:inline">|</span>
+
+          {/* Room Type Selector */}
+          <div className="flex items-center space-x-1.5 bg-slate-900/80 border border-slate-700/60 px-2.5 py-1 rounded-lg">
+            <Home className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+            <select
+              value={roomType}
+              onChange={(e) => setRoomType(e.target.value)}
+              className="bg-transparent text-xs font-medium text-slate-200 focus:outline-none cursor-pointer"
+            >
+              {ROOM_OPTIONS.map((room) => (
+                <option key={room} value={room} className="bg-slate-900 text-slate-200">
+                  {room}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Design Style Selector */}
+          <div className="flex items-center space-x-1.5 bg-slate-900/80 border border-slate-700/60 px-2.5 py-1 rounded-lg">
+            <Palette className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+            <select
+              value={designStyle}
+              onChange={(e) => setDesignStyle(e.target.value)}
+              className="bg-transparent text-xs font-medium text-slate-200 focus:outline-none cursor-pointer"
+            >
+              {STYLE_OPTIONS.map((style) => (
+                <option key={style} value={style} className="bg-slate-900 text-slate-200">
+                  {style}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {/* Minimal Actions */}
@@ -189,10 +251,10 @@ export default function StudioPage() {
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading || isOrchestrating}
-            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-medium flex items-center space-x-1.5 transition-all shadow-md shadow-blue-600/20 active:scale-95 disabled:opacity-50"
+            className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-medium flex items-center space-x-1.5 transition-all shadow-md shadow-blue-600/20 active:scale-95 disabled:opacity-50"
           >
             <Upload className="w-3.5 h-3.5" />
-            <span>{uploading ? "Analyzing..." : "Upload Render"}</span>
+            <span>{uploading ? `Analyzing ${roomType}...` : `Upload ${roomType}`}</span>
           </button>
         </div>
       </header>
@@ -230,7 +292,7 @@ export default function StudioPage() {
             <div className="absolute inset-0 z-40 bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center animate-fade-in p-4 select-none">
               <div className="px-6 py-4 rounded-2xl border border-slate-700/80 bg-slate-900/90 shadow-2xl flex items-center space-x-3.5 font-mono text-xs text-slate-200">
                 <Loader2 className="w-5 h-5 text-cyan-400 animate-spin" />
-                <span>{uploading ? "Analyzing Scene Graph..." : "Synthesizing AI Edit..."}</span>
+                <span>{uploading ? `Running Tailored ${roomType} Vision Pipeline...` : "Synthesizing AI Edit..."}</span>
               </div>
             </div>
           )}

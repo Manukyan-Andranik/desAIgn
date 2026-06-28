@@ -49,6 +49,8 @@ export interface SceneGraph {
   width: number;
   height: number;
   version: number;
+  room_type?: string;
+  design_style?: string;
   objects: SceneObject[];
   relationships?: SceneRelationship[];
 }

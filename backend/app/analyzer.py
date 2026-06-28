@@ -94,15 +94,16 @@ class AntigravityVisionPipeline:
 
         log_action("PIPELINE_INIT", f"Multi-Model Pipeline: GDINO={self.has_gdino} SAM={self.has_sam} Depth={self.has_depth}")
 
-    def analyze(self, file_bytes: bytes, image_id: str, image_url: str = None) -> SceneGraph:
+    def analyze(
+        self,
+        file_bytes: bytes,
+        image_id: str,
+        image_url: str = None,
+        room_type: str = "Living Room",
+        design_style: str = "Japandi Minimalist"
+    ) -> SceneGraph:
         """
-        Execute the full 3-model vision pipeline on an uploaded interior render.
-        
-        Stage 1: Grounding DINO → Object Detection (bounding boxes + classes)
-        Stage 2: SAM → Pixel-Perfect Mask Segmentation (polygons from boxes)
-        Stage 3: Depth Anything V2 → Per-Object Metric Depth
-        Stage 4: Material Spec Lookup → Material/Style Assignment
-        Stage 5: Scene Graph Assembly → SceneGraph Response
+        Execute the full 5-stage production vision pipeline tailored to room function and architectural style.
         """
         pipeline_start = time.time()
 
@@ -112,7 +113,7 @@ class AntigravityVisionPipeline:
         except Exception:
             width, height = 1920, 1080
 
-        log_action("PIPELINE_START", f"Analyzing render '{image_id}' ({width}x{height}) with 3-Model MVP Stack")
+        log_action("PIPELINE_START", f"Analyzing render '{image_id}' ({width}x{height}) for Room: '{room_type}', Style: '{design_style}'")
 
         # ─── Check if new pipeline is available ───────────────────────
         if not self.has_gdino:
@@ -120,10 +121,11 @@ class AntigravityVisionPipeline:
             return self._legacy_analyze(file_bytes, image_id, image_url, width, height)
 
         # ─── Stage 1: Grounding DINO Open-Vocabulary Detection ────────
-        log_action("STAGE_1_START", "Running Grounding DINO Base open-vocabulary detection with adaptive confidence tuning...")
+        log_action("STAGE_1_START", f"Running Grounding DINO Base open-vocabulary detection for '{room_type}'...")
         detections, gdino_time = self.gdino.detect(
             file_bytes=file_bytes,
             image_id=image_id,
+            room_type=room_type,
             threshold=0.22,
             text_threshold=0.22
         )
@@ -224,6 +226,8 @@ class AntigravityVisionPipeline:
             width=width,
             height=height,
             version=1,
+            room_type=room_type,
+            design_style=design_style,
             objects=scene_objects,
             relationships=relationships
         )

@@ -126,8 +126,8 @@ class AntigravityVisionPipeline:
             file_bytes=file_bytes,
             image_id=image_id,
             room_type=room_type,
-            threshold=0.22,
-            text_threshold=0.22
+            threshold=0.50,
+            text_threshold=0.50
         )
         
         # Adaptive confidence refinement: filter out raw predictions with low bounding box aspect ratio consistency

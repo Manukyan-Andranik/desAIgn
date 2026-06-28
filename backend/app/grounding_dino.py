@@ -108,8 +108,8 @@ class GroundingDINODetector:
         image_id: str,
         room_type: Optional[str] = "Living Room",
         text_prompt: Optional[str] = None,
-        threshold: float = 0.20,
-        text_threshold: float = 0.20
+        threshold: float = 0.50,
+        text_threshold: float = 0.50
     ) -> Tuple[List[Dict[str, Any]], float]:
         """
         Detect interior objects using text-prompted Grounding DINO.

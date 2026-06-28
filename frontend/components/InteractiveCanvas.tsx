@@ -211,19 +211,38 @@ export default function InteractiveCanvas({
                   />
                 )}
 
-                {/* Optional Bounding Box Frames */}
-                {showBBoxes && obj.bbox && !isHovered && !isSelected && (
+                {/* Vibrant & Interactive Bounding Box Frames when toggled ON */}
+                {showBBoxes && obj.bbox && (
                   <Group>
                     <Rect
                       x={obj.bbox[0]}
                       y={obj.bbox[1]}
                       width={obj.bbox[2] - obj.bbox[0]}
                       height={obj.bbox[3] - obj.bbox[1]}
-                      stroke="rgba(148, 163, 184, 0.35)"
-                      strokeWidth={1 / totalScale}
-                      dash={[4, 4]}
-                      listening={false}
+                      stroke={isSelected ? "#3b82f6" : isHovered ? "#06b6d4" : "rgba(6, 182, 212, 0.7)"}
+                      strokeWidth={isSelected ? 2.5 / totalScale : 1.5 / totalScale}
+                      dash={isSelected || isHovered ? [] : [6, 4]}
+                      fill={isSelected ? "rgba(59, 130, 246, 0.15)" : isHovered ? "rgba(6, 182, 212, 0.15)" : "rgba(6, 182, 212, 0.05)"}
+                      onMouseEnter={() => onHoverObject(obj.id)}
+                      onMouseLeave={() => onHoverObject(null)}
+                      onClick={() => onSelectObject(obj.id)}
                     />
+                    <Group x={obj.bbox[0]} y={Math.max(0, obj.bbox[1] - 18)} listening={false}>
+                      <Rect
+                        width={Math.max(70, obj.class.length * 7 + 35)}
+                        height={16}
+                        fill={isSelected ? "#2563eb" : isHovered ? "#0891b2" : "rgba(15, 23, 42, 0.85)"}
+                        cornerRadius={3}
+                      />
+                      <Text
+                        text={`${obj.class.toUpperCase()} (${(obj.confidence * 100).toFixed(0)}%)`}
+                        fontSize={9}
+                        fontFamily="monospace"
+                        fontStyle="bold"
+                        fill="#ffffff"
+                        padding={3}
+                      />
+                    </Group>
                   </Group>
                 )}
 

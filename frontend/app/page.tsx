@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import { SceneGraph, OrchestratorResponse } from "@/types/scene";
 import LayersSidebar from "@/components/LayersSidebar";
 import Inspector from "@/components/Inspector";
-import { Sparkles, Upload, RefreshCw, Cpu, CheckCircle2, Scan, Loader2, Home, Palette } from "lucide-react";
+import { Sparkles, Upload, RefreshCw, Cpu, CheckCircle2, Scan, Loader2, Home, Palette, Sliders, Layers, ArrowRight, X } from "lucide-react";
 
 const InteractiveCanvas = dynamic(() => import("@/components/InteractiveCanvas"), {
   ssr: false,
@@ -18,22 +18,22 @@ const InteractiveCanvas = dynamic(() => import("@/components/InteractiveCanvas")
 });
 
 const ROOM_OPTIONS = [
-  "Living Room",
-  "Kitchen",
-  "Bedroom",
-  "Bathroom",
-  "Office & Study",
-  "Cafe & Restaurant",
-  "Outdoor Patio"
+  { id: "Living Room", label: "Living Room", icon: "🛋️", desc: "Sofas, coffee tables, TV consoles, lounge armchairs" },
+  { id: "Kitchen", label: "Kitchen", icon: "🍳", desc: "Kitchen islands, stoves, refrigerators, cabinets, sinks" },
+  { id: "Bedroom", label: "Bedroom", icon: "🖏️", desc: "Beds, nightstands, headboards, wardrobes, dressers" },
+  { id: "Bathroom", label: "Bathroom", icon: "🛁", desc: "Bathtubs, shower enclosures, vanities, mirrors, sinks" },
+  { id: "Office & Study", label: "Office & Study", icon: "💼", desc: "Executive desks, task chairs, bookcases, monitors" },
+  { id: "Cafe & Restaurant", label: "Cafe & Restaurant", icon: "☕", desc: "Espresso machines, cafe tables, bar counters, displays" },
+  { id: "Outdoor Patio", label: "Outdoor Patio", icon: "🌿", desc: "Patio loungers, outdoor dining, pergolas, planters" }
 ];
 
 const STYLE_OPTIONS = [
-  "Japandi Minimalist",
-  "Scandinavian Modern",
-  "Industrial Brutalist",
-  "Biophilic Luxury",
-  "Mid-Century Modern",
-  "Classic Art Deco"
+  { id: "Japandi Minimalist", label: "Japandi Minimalist", desc: "Clean organic warm timber, muted tones, uncluttered forms" },
+  { id: "Scandinavian Modern", label: "Scandinavian Modern", desc: "Nordic light woods, cozy wool textiles, functional design" },
+  { id: "Industrial Brutalist", label: "Industrial Brutalist", desc: "Exposed concrete, dark steel framing, raw tactile elements" },
+  { id: "Biophilic Luxury", label: "Biophilic Luxury", desc: "Rich lush indoor greenery, natural stone, organic curvature" },
+  { id: "Mid-Century Modern", label: "Mid-Century Modern", desc: "Iconic tapered legs, warm walnut wood, vibrant accents" },
+  { id: "Classic Art Deco", label: "Classic Art Deco", desc: "Opulent brass metals, geometric motifs, polished marble" }
 ];
 
 export default function StudioPage() {
@@ -43,7 +43,8 @@ export default function StudioPage() {
   const [showBBoxes, setShowBBoxes] = useState<boolean>(false);
   const [notification, setNotification] = useState<{ message: string; model?: string; type?: "info" | "success" | "ai" } | null>(null);
   
-  // Target Room & Architectural Style Selection
+  // Interactive Room Function & Style Setup State
+  const [showSetupModal, setShowSetupModal] = useState<boolean>(false);
   const [roomType, setRoomType] = useState<string>("Living Room");
   const [designStyle, setDesignStyle] = useState<string>("Japandi Minimalist");
 
@@ -134,7 +135,7 @@ export default function StudioPage() {
         if (data.objects.length > 0) {
           setSelectedObjectId(data.objects[0].id);
         }
-        showToast(`Analyzed ${roomType} (${data.objects.length} elements).`, `${designStyle}`, "success");
+        showToast(`Analyzed ${roomType} (${data.objects.length} high-confidence elements).`, `${designStyle}`, "success");
       }
     } catch (err) {
       console.error("File upload error:", err);
@@ -174,7 +175,7 @@ export default function StudioPage() {
         className="hidden"
       />
 
-      {/* Sleek Minimalist Navigation & Context Selector Bar */}
+      {/* Navigation & Context Selector Bar */}
       <header className="h-13 bg-[#0c0e14]/90 border-b border-slate-800/80 px-5 flex items-center justify-between z-20 shrink-0 backdrop-blur-md">
         <div className="flex items-center space-x-4">
           <div className="flex items-center space-x-2.5">
@@ -186,37 +187,15 @@ export default function StudioPage() {
 
           <span className="text-slate-800 font-bold hidden sm:inline">|</span>
 
-          {/* Room Type Selector */}
-          <div className="flex items-center space-x-1.5 bg-slate-900/80 border border-slate-700/60 px-2.5 py-1 rounded-lg">
-            <Home className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-            <select
-              value={roomType}
-              onChange={(e) => setRoomType(e.target.value)}
-              className="bg-transparent text-xs font-medium text-slate-200 focus:outline-none cursor-pointer"
-            >
-              {ROOM_OPTIONS.map((room) => (
-                <option key={room} value={room} className="bg-slate-900 text-slate-200">
-                  {room}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Design Style Selector */}
-          <div className="flex items-center space-x-1.5 bg-slate-900/80 border border-slate-700/60 px-2.5 py-1 rounded-lg">
-            <Palette className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-            <select
-              value={designStyle}
-              onChange={(e) => setDesignStyle(e.target.value)}
-              className="bg-transparent text-xs font-medium text-slate-200 focus:outline-none cursor-pointer"
-            >
-              {STYLE_OPTIONS.map((style) => (
-                <option key={style} value={style} className="bg-slate-900 text-slate-200">
-                  {style}
-                </option>
-              ))}
-            </select>
-          </div>
+          {/* Quick Setup Modal Launcher */}
+          <button
+            onClick={() => setShowSetupModal(true)}
+            className="flex items-center space-x-2 bg-slate-900/90 hover:bg-slate-800 border border-slate-700/70 px-3 py-1 rounded-lg text-xs font-medium text-slate-200 transition-all shadow-sm group"
+          >
+            <Sliders className="w-3.5 h-3.5 text-cyan-400 group-hover:rotate-45 transition-transform" />
+            <span>{roomType} • {designStyle}</span>
+            <span className="text-[10px] text-cyan-400 font-mono bg-cyan-950/80 px-1.5 py-0.5 rounded border border-cyan-800/60 ml-1">Setup</span>
+          </button>
         </div>
 
         {/* Minimal Actions */}
@@ -254,7 +233,7 @@ export default function StudioPage() {
             className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-medium flex items-center space-x-1.5 transition-all shadow-md shadow-blue-600/20 active:scale-95 disabled:opacity-50"
           >
             <Upload className="w-3.5 h-3.5" />
-            <span>{uploading ? `Analyzing ${roomType}...` : `Upload ${roomType}`}</span>
+            <span>{uploading ? `Analyzing ${roomType}...` : `Upload Render`}</span>
           </button>
         </div>
       </header>
@@ -292,7 +271,7 @@ export default function StudioPage() {
             <div className="absolute inset-0 z-40 bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center animate-fade-in p-4 select-none">
               <div className="px-6 py-4 rounded-2xl border border-slate-700/80 bg-slate-900/90 shadow-2xl flex items-center space-x-3.5 font-mono text-xs text-slate-200">
                 <Loader2 className="w-5 h-5 text-cyan-400 animate-spin" />
-                <span>{uploading ? `Running Tailored ${roomType} Vision Pipeline...` : "Synthesizing AI Edit..."}</span>
+                <span>{uploading ? `Running ${roomType} Vision Pipeline (50%+ Confidence Filter)...` : "Synthesizing AI Edit..."}</span>
               </div>
             </div>
           )}
@@ -316,6 +295,107 @@ export default function StudioPage() {
           width={rightWidth}
         />
       </div>
+
+      {/* Interactive Room Function & Architectural Style Setup Modal */}
+      {showSetupModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in select-none">
+          <div className="w-full max-w-3xl bg-[#0c0e14] border border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-slate-800/80 flex items-center justify-between bg-slate-900/50">
+              <div className="flex items-center space-x-3">
+                <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-cyan-400 flex items-center justify-center text-white font-bold shadow-md shadow-blue-500/20">
+                  <Sliders className="w-4 h-4" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-slate-100">Architectural Scene Context Setup</h2>
+                  <p className="text-[11px] text-slate-400">Select room function & design style to tailor zero-shot vision detection.</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowSetupModal(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition-all"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Content Grid */}
+            <div className="p-6 overflow-y-auto space-y-6 flex-1 custom-scrollbar">
+              {/* Step 1: Select Room Function */}
+              <div>
+                <div className="flex items-center space-x-2 mb-3">
+                  <span className="w-5 h-5 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center">1</span>
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">Select Room Function</h3>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                  {ROOM_OPTIONS.map((room) => {
+                    const isSelected = roomType === room.id;
+                    return (
+                      <button
+                        key={room.id}
+                        onClick={() => setRoomType(room.id)}
+                        className={`p-3 rounded-xl border text-left transition-all ${
+                          isSelected
+                            ? "bg-blue-600/20 border-blue-500/80 text-blue-200 shadow-lg shadow-blue-600/10 font-medium"
+                            : "bg-slate-900/60 border-slate-800 text-slate-300 hover:bg-slate-800/60 hover:border-slate-700"
+                        }`}
+                      >
+                        <div className="text-base mb-1">{room.icon}</div>
+                        <div className="text-xs font-semibold">{room.label}</div>
+                        <div className="text-[10px] text-slate-500 leading-tight mt-1 truncate">{room.desc}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Step 2: Select Architectural Style */}
+              <div>
+                <div className="flex items-center space-x-2 mb-3">
+                  <span className="w-5 h-5 rounded-full bg-cyan-600 text-white text-[10px] font-bold flex items-center justify-center">2</span>
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">Select Architectural Style</h3>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                  {STYLE_OPTIONS.map((style) => {
+                    const isSelected = designStyle === style.id;
+                    return (
+                      <button
+                        key={style.id}
+                        onClick={() => setDesignStyle(style.id)}
+                        className={`p-3 rounded-xl border text-left transition-all ${
+                          isSelected
+                            ? "bg-cyan-600/20 border-cyan-500/80 text-cyan-200 shadow-lg shadow-cyan-600/10 font-medium"
+                            : "bg-slate-900/60 border-slate-800 text-slate-300 hover:bg-slate-800/60 hover:border-slate-700"
+                        }`}
+                      >
+                        <div className="text-xs font-semibold">{style.label}</div>
+                        <div className="text-[10px] text-slate-500 leading-tight mt-1 line-clamp-2">{style.desc}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer Actions */}
+            <div className="px-6 py-4 border-t border-slate-800/80 bg-slate-900/60 flex items-center justify-between">
+              <div className="text-xs text-slate-400 font-mono">
+                Active: <span className="text-cyan-300 font-semibold">{roomType}</span> • <span className="text-blue-300 font-semibold">{designStyle}</span>
+              </div>
+              <button
+                onClick={() => {
+                  setShowSetupModal(false);
+                  fileInputRef.current?.click();
+                }}
+                className="px-4 py-2 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white rounded-xl text-xs font-semibold flex items-center space-x-2 shadow-lg shadow-blue-600/25 active:scale-95 transition-all"
+              >
+                <span>Upload & Analyze Render</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

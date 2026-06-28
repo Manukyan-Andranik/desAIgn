@@ -6,5 +6,6 @@
   "plant": "building",
   "television": "book",
   "painting": "wall",
-  "building": "wall"
+  "building": "wall",
+  "wall": "wall"
 }

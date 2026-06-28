@@ -9,9 +9,10 @@ import { ZoomIn, ZoomOut, Maximize2, Move, Paintbrush, MousePointer, Check, X, S
 interface InteractiveCanvasProps {
   sceneGraph: SceneGraph | null;
   selectedObjectId: string | null;
+  selectedObjectIds?: string[];
   hoveredObjectId: string | null;
   showBBoxes?: boolean;
-  onSelectObject: (id: string | null) => void;
+  onSelectObject: (id: string | null, isMulti?: boolean) => void;
   onHoverObject: (id: string | null) => void;
   onAddCustomObject?: (className: string, points: number[][]) => void;
 }
@@ -21,6 +22,7 @@ const DEFAULT_IMAGE_URL = "/default.jpg";
 export default function InteractiveCanvas({
   sceneGraph,
   selectedObjectId,
+  selectedObjectIds = [],
   hoveredObjectId,
   showBBoxes = false,
   onSelectObject,
@@ -317,7 +319,7 @@ export default function InteractiveCanvas({
 
           {/* Object Mask Layers */}
           {sceneGraph.objects.map((obj) => {
-            const isSelected = selectedObjectId === obj.id;
+            const isSelected = selectedObjectId === obj.id || selectedObjectIds.includes(obj.id);
             const isHovered = hoveredObjectId === obj.id;
             
             let rawPoints: number[] = [];
@@ -357,7 +359,12 @@ export default function InteractiveCanvas({
                     shadowOpacity={isHovered || isSelected ? 0.8 : 0}
                     onMouseEnter={() => activeTool === "select" && onHoverObject(obj.id)}
                     onMouseLeave={() => activeTool === "select" && onHoverObject(null)}
-                    onClick={() => activeTool === "select" && onSelectObject(obj.id)}
+                    onClick={(e) => {
+                      if (activeTool === "select") {
+                        const isMulti = e.evt ? (e.evt.shiftKey || e.evt.metaKey || e.evt.ctrlKey) : false;
+                        onSelectObject(obj.id, isMulti);
+                      }
+                    }}
                   />
                 )}
 
@@ -375,7 +382,12 @@ export default function InteractiveCanvas({
                       fill={isSelected ? "rgba(59, 130, 246, 0.15)" : isHovered ? "rgba(6, 182, 212, 0.15)" : "rgba(6, 182, 212, 0.05)"}
                       onMouseEnter={() => activeTool === "select" && onHoverObject(obj.id)}
                       onMouseLeave={() => activeTool === "select" && onHoverObject(null)}
-                      onClick={() => activeTool === "select" && onSelectObject(obj.id)}
+                      onClick={(e) => {
+                        if (activeTool === "select") {
+                          const isMulti = e.evt ? (e.evt.shiftKey || e.evt.metaKey || e.evt.ctrlKey) : false;
+                          onSelectObject(obj.id, isMulti);
+                        }
+                      }}
                     />
                   </Group>
                 )}

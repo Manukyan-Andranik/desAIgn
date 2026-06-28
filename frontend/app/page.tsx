@@ -490,9 +490,10 @@ export default function StudioPage() {
             <InteractiveCanvas
               sceneGraph={sceneGraph}
               selectedObjectId={selectedObjectId}
+              selectedObjectIds={selectedObjectIds}
               hoveredObjectId={hoveredObjectId}
               showBBoxes={showBBoxes}
-              onSelectObject={(id) => handleToggleSelectObject(id, false)}
+              onSelectObject={(id, isMulti = false) => handleToggleSelectObject(id, isMulti)}
               onHoverObject={(id) => setHoveredObjectId(id)}
               onAddCustomObject={handleAddCustomObject}
             />

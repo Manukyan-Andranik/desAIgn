@@ -6,9 +6,11 @@ import { SceneGraph, SceneObject, OrchestratorResponse, User, Project } from "@/
 import LayersSidebar from "@/components/LayersSidebar";
 import Inspector from "@/components/Inspector";
 import HomePage from "@/components/HomePage";
+import ProjectsPage from "@/components/ProjectsPage";
+import AuthModal from "@/components/AuthModal";
 import ProgressLoader from "@/components/ProgressLoader";
 import UserSwitcher from "@/components/UserSwitcher";
-import { Sparkles, Upload, RefreshCw, Cpu, CheckCircle2, Scan, Loader2, Home, Palette, Sliders, Layers, ArrowRight, X, LayoutDashboard, Plus, Trash2 } from "lucide-react";
+import { Sparkles, Upload, RefreshCw, Cpu, CheckCircle2, Scan, Loader2, Home, Palette, Sliders, Layers, ArrowRight, X, LayoutDashboard, Plus, Trash2, Folder } from "lucide-react";
 
 const InteractiveCanvas = dynamic(() => import("@/components/InteractiveCanvas"), {
   ssr: false,
@@ -40,7 +42,8 @@ const STYLE_OPTIONS = [
 ];
 
 export default function StudioPage() {
-  const [viewMode, setViewMode] = useState<"home" | "studio">("home");
+  const [viewMode, setViewMode] = useState<"home" | "projects" | "studio">("home");
+  const [showAuthModal, setShowAuthModal] = useState(false);
   const [sceneGraph, setSceneGraph] = useState<SceneGraph | null>(null);
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null);
   const [selectedObjectIds, setSelectedObjectIds] = useState<string[]>([]);
@@ -441,6 +444,20 @@ export default function StudioPage() {
             </button>
             <button
               onClick={() => {
+                setViewMode("projects");
+                showToast("Navigated to Projects Portfolio", "Studio Navigation", "info");
+              }}
+              className={`px-3 py-1 rounded-lg transition-all flex items-center space-x-1.5 ${
+                viewMode === "projects"
+                  ? "bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-bold shadow-md shadow-cyan-500/25"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              <Folder className="w-3.5 h-3.5" />
+              <span>Projects</span>
+            </button>
+            <button
+              onClick={() => {
                 setViewMode("studio");
                 showToast(`Navigated to Studio Workspace (${roomType})`, "Studio Navigation", "info");
               }}
@@ -500,17 +517,7 @@ export default function StudioPage() {
             </>
           )}
 
-          {viewMode === "studio" && (
-            <button
-              onClick={() => setViewMode("home")}
-              className="px-3 py-1.5 bg-slate-800/80 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium flex items-center space-x-1.5 transition-all"
-            >
-              <Home className="w-3.5 h-3.5" />
-              <span>Home Hub</span>
-            </button>
-          )}
-
-          {/* Active User Switcher */}
+          {/* Active User Switcher / Auth Trigger */}
           <UserSwitcher
             users={users}
             activeUser={activeUser}
@@ -519,6 +526,13 @@ export default function StudioPage() {
               showToast(`Switched workspace user to ${u.name}`, "User Manager", "info");
             }}
           />
+
+          <button
+            onClick={() => setShowAuthModal(true)}
+            className="hidden sm:flex px-3 py-1.5 bg-slate-800/90 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-semibold items-center space-x-1.5 transition-all border border-slate-700/80"
+          >
+            <span>Sign In / Auth</span>
+          </button>
 
           <button
             onClick={() => fileInputRef.current?.click()}
@@ -531,7 +545,7 @@ export default function StudioPage() {
         </div>
       </header>
 
-      {/* View Mode Router: Home Landing vs Interactive Studio Workspace */}
+      {/* View Mode Router: Home Landing vs Projects Portfolio vs Interactive Studio Workspace */}
       {viewMode === "home" ? (
         <HomePage
           activeUser={activeUser}
@@ -542,6 +556,15 @@ export default function StudioPage() {
           selectedRoomType={roomType}
           selectedDesignStyle={designStyle}
           onOpenSetupModal={() => setShowSetupModal(true)}
+        />
+      ) : viewMode === "projects" ? (
+        <ProjectsPage
+          activeUser={activeUser}
+          projects={projects}
+          onUploadClick={() => fileInputRef.current?.click()}
+          onSelectProject={handleSelectProject}
+          onDeleteProject={handleDeleteProject}
+          onOpenAuthModal={() => setShowAuthModal(true)}
         />
       ) : (
         <div className="flex-1 flex overflow-hidden relative">
@@ -700,6 +723,17 @@ export default function StudioPage() {
           </div>
         </div>
       )}
+
+      {/* Login & Registration Auth Modal */}
+      <AuthModal
+        isOpen={showAuthModal}
+        onClose={() => setShowAuthModal(false)}
+        onSuccess={(u) => {
+          setActiveUser(u);
+          fetchUsers();
+          showToast(`Welcome back, ${u.name}! Signed into workspace.`, "Auth Manager", "success");
+        }}
+      />
     </div>
   );
 }

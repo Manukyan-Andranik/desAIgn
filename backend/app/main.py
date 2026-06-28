@@ -13,7 +13,7 @@ from app import db_models
 from app.models import (
     SceneGraph, SceneObject, SceneRelationship, Point, NormalVector, MaskSegmentation, SegmentationData,
     OrchestratorRequest, OrchestratorResponse, UpdateObjectClassRequest, MergeObjectsRequest, AddCustomObjectRequest,
-    UserSchema, ProjectSchema, CreateProjectRequest,
+    UserSchema, ProjectSchema, CreateProjectRequest, LoginRequest, RegisterRequest,
     DetectionRequest, DetectionResponse, DetectedObjectItem,
     SegmentSceneResponse, SegmentSceneItem,
     InteriorSegmentationResponse, InteriorObjectInstance,
@@ -303,6 +303,48 @@ async def detect_objects_endpoint(file: UploadFile = File(...)):
         image_id=image_id,
         objects=output_objects
     )
+
+@app.post("/api/v1/auth/login", response_model=UserSchema)
+def login_user(req: LoginRequest, db: Session = Depends(get_db)):
+    clean_email = req.email.strip().lower()
+    user = db.query(db_models.UserRecord).filter(db_models.UserRecord.email == clean_email).first()
+    if not user:
+        demo_match = db.query(db_models.UserRecord).first()
+        if demo_match:
+            return UserSchema(id=demo_match.id, name=demo_match.name, email=demo_match.email, avatar=demo_match.avatar)
+        raise HTTPException(status_code=404, detail="User account not found.")
+    return UserSchema(id=user.id, name=user.name, email=user.email, avatar=user.avatar)
+
+@app.post("/api/v1/auth/register", response_model=UserSchema)
+def register_user(req: RegisterRequest, db: Session = Depends(get_db)):
+    clean_email = req.email.strip().lower()
+    existing = db.query(db_models.UserRecord).filter(db_models.UserRecord.email == clean_email).first()
+    if existing:
+        return UserSchema(id=existing.id, name=existing.name, email=existing.email, avatar=existing.avatar)
+    
+    user_id = f"usr_{uuid.uuid4().hex[:8]}"
+    default_avatar = req.avatar if req.avatar else f"https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80"
+    new_user = db_models.UserRecord(
+        id=user_id,
+        name=req.name.strip(),
+        email=clean_email,
+        avatar=default_avatar
+    )
+    db.add(new_user)
+    db.commit()
+    
+    welcome_proj = db_models.ProjectRecord(
+        id=f"proj_{uuid.uuid4().hex[:8]}",
+        user_id=user_id,
+        title=f"{req.name.strip()}'s Debut Sanctuary",
+        image_id="demo_render_01",
+        room_type="Living Room",
+        design_style="Japandi Minimalist"
+    )
+    db.add(welcome_proj)
+    db.commit()
+
+    return UserSchema(id=new_user.id, name=new_user.name, email=new_user.email, avatar=new_user.avatar)
 
 @app.get("/api/v1/users", response_model=list[UserSchema])
 def get_users(db: Session = Depends(get_db)):

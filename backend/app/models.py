@@ -68,6 +68,16 @@ class UserSchema(BaseModel):
     email: str
     avatar: Optional[str] = None
 
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+class RegisterRequest(BaseModel):
+    name: str
+    email: str
+    password: str
+    avatar: Optional[str] = None
+
 class ProjectSchema(BaseModel):
     id: str
     user_id: str

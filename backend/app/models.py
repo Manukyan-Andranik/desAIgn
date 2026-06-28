@@ -54,6 +54,14 @@ class MergeObjectsRequest(BaseModel):
     object_ids: List[str] = Field(..., description="List of object IDs to merge together")
     new_class: Optional[str] = Field(None, description="Optional override class name for merged object")
 
+class AddCustomObjectRequest(BaseModel):
+    image_id: str = Field(..., description="Scene graph image ID")
+    object_class: str = Field(..., alias="class", description="Name of the object entered by user")
+    brush_points: List[List[float]] = Field(..., description="List of [x, y] coordinates drawn by brush")
+
+    class Config:
+        populate_by_name = True
+
 class SceneRelationship(BaseModel):
     subject_id: str = Field(..., description="Subject object ID")
     predicate: str = Field(..., description="Spatial or structural relation (on, next_to, mounted_on, beside, under, above)")

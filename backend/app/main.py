@@ -12,7 +12,7 @@ from app.database import engine, Base, get_db
 from app import db_models
 from app.models import (
     SceneGraph, SceneObject, SceneRelationship, Point, NormalVector, MaskSegmentation, SegmentationData,
-    OrchestratorRequest, OrchestratorResponse, UpdateObjectClassRequest, MergeObjectsRequest,
+    OrchestratorRequest, OrchestratorResponse, UpdateObjectClassRequest, MergeObjectsRequest, AddCustomObjectRequest,
     DetectionRequest, DetectionResponse, DetectedObjectItem,
     SegmentSceneResponse, SegmentSceneItem,
     InteriorSegmentationResponse, InteriorObjectInstance,
@@ -439,6 +439,51 @@ def merge_objects(req: MergeObjectsRequest, db: Session = Depends(get_db)):
         "status": "success", 
         "message": f"Successfully combined {len(target_objs)} objects into unified '{primary_target.object_class}'.",
         "merged_object": primary_target
+    }
+
+@app.post("/api/v1/object/add-custom")
+def add_custom_object(req: AddCustomObjectRequest, db: Session = Depends(get_db)):
+    scene_graph = load_scene_graph_from_db(db, req.image_id)
+    clean_class = req.object_class.strip().lower()
+    
+    if not clean_class:
+        raise HTTPException(status_code=400, detail="Object name/class cannot be empty.")
+    if not req.brush_points or len(req.brush_points) < 3:
+        raise HTTPException(status_code=400, detail="At least 3 brush points are required to define an area.")
+
+    xs = [pt[0] for pt in req.brush_points]
+    ys = [pt[1] for pt in req.brush_points]
+    xmin, xmax = int(min(xs)), int(max(xs))
+    ymin, ymax = int(min(ys)), int(max(ys))
+
+    custom_id = f"{req.image_id}_brush_{uuid.uuid4().hex[:6]}"
+    polygon_points = [Point(x=float(pt[0]), y=float(pt[1])) for pt in req.brush_points]
+    seg_points = [[float(pt[0]), float(pt[1])] for pt in req.brush_points]
+
+    new_obj = SceneObject(
+        id=custom_id,
+        **{"class": clean_class},
+        layer="furniture",
+        polygon=polygon_points,
+        segmentation=MaskSegmentation(type="polygon", points=seg_points),
+        bbox=[xmin, ymin, xmax, ymax],
+        depth=2.5,
+        material="custom painted surface",
+        confidence=1.0,
+        editable=True
+    )
+
+    scene_graph.objects.append(new_obj)
+    scene_graph.version += 1
+    save_scene_graph_to_db(db, scene_graph)
+    
+    # Register in active learning memory
+    save_user_correction(clean_class, clean_class)
+
+    return {
+        "status": "success",
+        "message": f"Added custom object '{clean_class}' to scene graph.",
+        "new_object": new_obj
     }
 
 @app.post("/api/v1/orchestrate", response_model=OrchestratorResponse)

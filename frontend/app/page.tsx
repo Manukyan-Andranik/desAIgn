@@ -297,6 +297,32 @@ export default function StudioPage() {
     }
   };
 
+  const handleAddCustomObject = async (className: string, brushPoints: number[][]) => {
+    if (!imageId || !className.trim() || brushPoints.length < 3) return;
+    try {
+      const res = await fetch("http://localhost:8000/api/v1/object/add-custom", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          image_id: imageId,
+          object_class: className.trim(),
+          brush_points: brushPoints
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        fetchSceneGraph(imageId);
+        if (data.new_object) {
+          setSelectedObjectId(data.new_object.id);
+          setSelectedObjectIds([data.new_object.id]);
+        }
+        showToast(`Added custom object '${className}' to scene graph.`, "Active AI Learning", "success");
+      }
+    } catch (err) {
+      console.error("Failed to add custom object:", err);
+    }
+  };
+
   const selectedObject = sceneGraph?.objects.find((obj) => obj.id === selectedObjectId) || null;
 
   return (
@@ -468,6 +494,7 @@ export default function StudioPage() {
               showBBoxes={showBBoxes}
               onSelectObject={(id) => handleToggleSelectObject(id, false)}
               onHoverObject={(id) => setHoveredObjectId(id)}
+              onAddCustomObject={handleAddCustomObject}
             />
           </main>
 

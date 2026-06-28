@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Stage, Layer, Image as KonvaImage, Line, Rect, Text, Group, Arrow } from "react-konva";
 import useImage from "use-image";
 import { SceneGraph } from "@/types/scene";
-import { ZoomIn, ZoomOut, Maximize2, Move } from "lucide-react";
+import { ZoomIn, ZoomOut, Maximize2, Move, Paintbrush, MousePointer, Check, X, Sparkles } from "lucide-react";
 
 interface InteractiveCanvasProps {
   sceneGraph: SceneGraph | null;
@@ -13,6 +13,7 @@ interface InteractiveCanvasProps {
   showBBoxes?: boolean;
   onSelectObject: (id: string | null) => void;
   onHoverObject: (id: string | null) => void;
+  onAddCustomObject?: (className: string, points: number[][]) => void;
 }
 
 const DEFAULT_IMAGE_URL = "/default.jpg";
@@ -23,7 +24,8 @@ export default function InteractiveCanvas({
   hoveredObjectId,
   showBBoxes = false,
   onSelectObject,
-  onHoverObject
+  onHoverObject,
+  onAddCustomObject
 }: InteractiveCanvasProps) {
   const activeImageUrl = sceneGraph?.image_url || DEFAULT_IMAGE_URL;
   const [image] = useImage(activeImageUrl, "anonymous");
@@ -33,6 +35,16 @@ export default function InteractiveCanvas({
   const [zoomScale, setZoomScale] = useState(1);
   const [stagePos, setStagePos] = useState({ x: 0, y: 0 });
   const stageRef = useRef<any>(null);
+
+  // Brush Tool State
+  const [activeTool, setActiveTool] = useState<"select" | "brush">("select");
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [strokePoints, setStrokePoints] = useState<number[][]>([]);
+  
+  // Save Custom Object Naming Modal State
+  const [showNamingModal, setShowNamingModal] = useState(false);
+  const [customClassName, setCustomClassName] = useState("");
+  const [isSavingCustom, setIsSavingCustom] = useState(false);
 
   useEffect(() => {
     const updateDimensions = () => {
@@ -89,6 +101,66 @@ export default function InteractiveCanvas({
     setZoomScale(clampedScale);
   };
 
+  // Convert Pointer Screen Coordinates to Raw Image Coordinates
+  const getRawImagePointerPos = () => {
+    const stage = stageRef.current;
+    if (!stage || !sceneGraph) return null;
+    const pointer = stage.getPointerPosition();
+    if (!pointer) return null;
+
+    const currentX = stage.x();
+    const currentY = stage.y();
+
+    const imgX = (pointer.x - currentX) / totalScale;
+    const imgY = (pointer.y - currentY) / totalScale;
+    return [Math.round(imgX), Math.round(imgY)];
+  };
+
+  const handleMouseDown = (e: any) => {
+    if (activeTool === "brush") {
+      const pos = getRawImagePointerPos();
+      if (pos) {
+        setIsDrawing(true);
+        setStrokePoints([pos]);
+      }
+      return;
+    }
+
+    if (e.target === e.target.getStage()) {
+      onSelectObject(null);
+    }
+  };
+
+  const handleMouseMove = () => {
+    if (activeTool === "brush" && isDrawing) {
+      const pos = getRawImagePointerPos();
+      if (pos) {
+        setStrokePoints((prev) => [...prev, pos]);
+      }
+    }
+  };
+
+  const handleMouseUp = () => {
+    if (activeTool === "brush" && isDrawing) {
+      setIsDrawing(false);
+      if (strokePoints.length >= 3) {
+        setShowNamingModal(true);
+      }
+    }
+  };
+
+  const handleSaveCustomObjectSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!customClassName.trim() || strokePoints.length < 3 || !onAddCustomObject) return;
+
+    setIsSavingCustom(true);
+    onAddCustomObject(customClassName.trim(), strokePoints);
+    setShowNamingModal(false);
+    setCustomClassName("");
+    setStrokePoints([]);
+    setIsSavingCustom(false);
+  };
+
   if (!sceneGraph) return null;
 
   // Compute spatial object centers for relationship rendering
@@ -107,16 +179,45 @@ export default function InteractiveCanvas({
     }
   });
 
-  // Filter relationships connected to selected object
-  const activeRelationships = (sceneGraph.relationships || []).filter(
-    (r) => r.subject_id === selectedObjectId || r.object_id === selectedObjectId
-  );
+  const flatStrokePoints = strokePoints.flatMap((p) => [p[0], p[1]]);
 
   return (
     <div id="canvas-container" className="w-full h-full relative bg-[#07080c] flex items-center justify-center overflow-hidden">
       
       {/* Floating Canvas Controls Toolbar */}
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center space-x-1.5 p-1.5 glass-panel rounded-2xl border border-slate-700/60 shadow-2xl shadow-black/80 backdrop-blur-xl">
+      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center space-x-2 p-1.5 glass-panel rounded-2xl border border-slate-700/60 shadow-2xl shadow-black/80 backdrop-blur-xl">
+        
+        {/* Tool Mode Toggles */}
+        <div className="flex items-center space-x-1 bg-slate-950/80 p-1 rounded-xl border border-slate-800">
+          <button
+            onClick={() => setActiveTool("select")}
+            className={`p-1.5 rounded-lg text-xs font-mono transition-all flex items-center space-x-1 ${
+              activeTool === "select"
+                ? "bg-cyan-500 text-black font-bold shadow-md shadow-cyan-500/20"
+                : "text-slate-400 hover:text-slate-200"
+            }`}
+            title="Pointer Selection Mode"
+          >
+            <MousePointer className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Select</span>
+          </button>
+          <button
+            onClick={() => setActiveTool("brush")}
+            className={`p-1.5 rounded-lg text-xs font-mono transition-all flex items-center space-x-1 ${
+              activeTool === "brush"
+                ? "bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-bold shadow-md shadow-cyan-500/25"
+                : "text-slate-400 hover:text-slate-200"
+            }`}
+            title="Brush Area Mark Mode"
+          >
+            <Paintbrush className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Brush Area</span>
+          </button>
+        </div>
+
+        <span className="h-4 w-[1px] bg-slate-800" />
+
+        {/* Zoom Controls */}
         <button
           onClick={() => setZoomScale((prev) => Math.min(prev * 1.2, 5.0))}
           className="p-2 text-slate-300 hover:text-white hover:bg-slate-800/80 rounded-xl transition-all"
@@ -131,7 +232,7 @@ export default function InteractiveCanvas({
         >
           <ZoomOut className="w-4 h-4" />
         </button>
-        <span className="text-[11px] font-mono px-2 text-slate-400 border-x border-slate-800">
+        <span className="text-[11px] font-mono px-2 text-slate-400">
           {Math.round(zoomScale * 100)}%
         </span>
         <button
@@ -144,21 +245,71 @@ export default function InteractiveCanvas({
         </button>
       </div>
 
+      {/* Custom Object Naming Modal Dialog */}
+      {showNamingModal && (
+        <div className="absolute inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
+          <div className="w-full max-w-sm bg-[#0c0e14] border border-cyan-500/60 rounded-3xl p-6 shadow-2xl space-y-4 text-center">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-cyan-500/20 to-blue-600/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400 mx-auto shadow-lg">
+              <Paintbrush className="w-6 h-6 animate-pulse" />
+            </div>
+
+            <div>
+              <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wide">Save Custom Painted Object</h3>
+              <p className="text-xs text-slate-400 mt-1 font-sans">Enter the object name to register it into active AI memory.</p>
+            </div>
+
+            <form onSubmit={handleSaveCustomObjectSubmit} className="space-y-3">
+              <input
+                type="text"
+                value={customClassName}
+                onChange={(e) => setCustomClassName(e.target.value)}
+                placeholder="e.g. Vintage Rug, Custom Pillow, Armchair"
+                className="w-full bg-slate-950 border border-slate-700 focus:border-cyan-500 rounded-xl px-3 py-2 text-xs text-cyan-200 placeholder-slate-500 focus:outline-none font-sans"
+                autoFocus
+              />
+
+              <div className="flex items-center space-x-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowNamingModal(false);
+                    setStrokePoints([]);
+                  }}
+                  className="flex-1 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingCustom || !customClassName.trim()}
+                  className="flex-1 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold rounded-xl text-xs flex items-center justify-center space-x-1.5 shadow-lg shadow-cyan-500/25 transition-all disabled:opacity-50"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Save Object</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       <Stage
         ref={stageRef}
         width={stageDimensions.width}
         height={stageDimensions.height}
-        draggable
+        draggable={activeTool === "select"}
         x={stagePos.x + imageOffsetX}
         y={stagePos.y + imageOffsetY}
         onWheel={handleWheel}
         onDragEnd={(e) => {
-          setStagePos({ x: e.target.x() - imageOffsetX, y: e.target.y() - imageOffsetY });
+          if (activeTool === "select") {
+            setStagePos({ x: e.target.x() - imageOffsetX, y: e.target.y() - imageOffsetY });
+          }
         }}
-        onMouseDown={(e) => {
-          if (e.target === e.target.getStage()) onSelectObject(null);
-        }}
-        style={{ cursor: "grab" }}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        style={{ cursor: activeTool === "brush" ? "crosshair" : "grab" }}
       >
         <Layer scaleX={totalScale} scaleY={totalScale}>
           {/* Base Architectural Render Image */}
@@ -176,7 +327,6 @@ export default function InteractiveCanvas({
               rawPoints = obj.polygon.flatMap((p) => [p.x, p.y]);
             }
 
-            const center = objectCenters[obj.id] || { x: 100, y: 100 };
             const isOrganic = ["tree", "bush", "grass", "water", "pool", "sofa", "rug", "plant"].includes(obj.class);
 
             return (
@@ -205,13 +355,13 @@ export default function InteractiveCanvas({
                     shadowColor={isHovered ? "#06b6d4" : isSelected ? "#3b82f6" : undefined}
                     shadowBlur={isHovered || isSelected ? 12 : 0}
                     shadowOpacity={isHovered || isSelected ? 0.8 : 0}
-                    onMouseEnter={() => onHoverObject(obj.id)}
-                    onMouseLeave={() => onHoverObject(null)}
-                    onClick={() => onSelectObject(obj.id)}
+                    onMouseEnter={() => activeTool === "select" && onHoverObject(obj.id)}
+                    onMouseLeave={() => activeTool === "select" && onHoverObject(null)}
+                    onClick={() => activeTool === "select" && onSelectObject(obj.id)}
                   />
                 )}
 
-                {/* Vibrant & Interactive Bounding Box Frames when toggled ON */}
+                {/* Vibrant Bounding Box Frames when toggled ON */}
                 {showBBoxes && obj.bbox && (
                   <Group>
                     <Rect
@@ -223,50 +373,9 @@ export default function InteractiveCanvas({
                       strokeWidth={isSelected ? 2.5 / totalScale : 1.5 / totalScale}
                       dash={isSelected || isHovered ? [] : [6, 4]}
                       fill={isSelected ? "rgba(59, 130, 246, 0.15)" : isHovered ? "rgba(6, 182, 212, 0.15)" : "rgba(6, 182, 212, 0.05)"}
-                      onMouseEnter={() => onHoverObject(obj.id)}
-                      onMouseLeave={() => onHoverObject(null)}
-                      onClick={() => onSelectObject(obj.id)}
-                    />
-                    <Group x={obj.bbox[0]} y={Math.max(0, obj.bbox[1] - 18)} listening={false}>
-                      <Rect
-                        width={Math.max(70, obj.class.length * 7 + 35)}
-                        height={16}
-                        fill={isSelected ? "#2563eb" : isHovered ? "#0891b2" : "rgba(15, 23, 42, 0.85)"}
-                        cornerRadius={3}
-                      />
-                      <Text
-                        text={`${obj.class.toUpperCase()} (${(obj.confidence * 100).toFixed(0)}%)`}
-                        fontSize={9}
-                        fontFamily="monospace"
-                        fontStyle="bold"
-                        fill="#ffffff"
-                        padding={3}
-                      />
-                    </Group>
-                  </Group>
-                )}
-
-                {/* Hover / Selection Object Tag Label */}
-                {(isSelected || isHovered) && (
-                  <Group x={center.x - 45} y={center.y - 14} listening={false}>
-                    <Rect
-                      width={90}
-                      height={22}
-                      fill={isSelected ? "#2563eb" : "#0891b2"}
-                      cornerRadius={6}
-                      shadowColor="#000000"
-                      shadowBlur={8}
-                      shadowOpacity={0.5}
-                    />
-                    <Text
-                      text={`${obj.class.toUpperCase()}`}
-                      fontSize={10}
-                      fontFamily="sans-serif"
-                      fontStyle="bold"
-                      fill="#ffffff"
-                      padding={5}
-                      align="center"
-                      width={90}
+                      onMouseEnter={() => activeTool === "select" && onHoverObject(obj.id)}
+                      onMouseLeave={() => activeTool === "select" && onHoverObject(null)}
+                      onClick={() => activeTool === "select" && onSelectObject(obj.id)}
                     />
                   </Group>
                 )}
@@ -274,47 +383,21 @@ export default function InteractiveCanvas({
             );
           })}
 
-          {/* Spatial Relationship Vector Connectors */}
-          {activeRelationships.map((rel, index) => {
-            const start = objectCenters[rel.subject_id];
-            const end = objectCenters[rel.object_id];
-            if (!start || !end) return null;
+          {/* Active User Brush Stroke Preview */}
+          {flatStrokePoints.length >= 4 && (
+            <Line
+              points={flatStrokePoints}
+              stroke="#06b6d4"
+              strokeWidth={16 / totalScale}
+              lineCap="round"
+              lineJoin="round"
+              shadowColor="#06b6d4"
+              shadowBlur={15}
+              shadowOpacity={0.9}
+              closed={false}
+            />
+          )}
 
-            return (
-              <Group key={`rel_${index}`}>
-                <Arrow
-                  points={[start.x, start.y, end.x, end.y]}
-                  pointerLength={8}
-                  pointerWidth={8}
-                  fill="#38bdf8"
-                  stroke="#0284c7"
-                  strokeWidth={2 / totalScale}
-                  dash={[6, 4]}
-                  opacity={0.85}
-                  listening={false}
-                />
-                <Group x={(start.x + end.x) / 2 - 35} y={(start.y + end.y) / 2 - 10} listening={false}>
-                  <Rect
-                    width={70}
-                    height={18}
-                    fill="rgba(15, 23, 42, 0.9)"
-                    stroke="#0284c7"
-                    strokeWidth={1}
-                    cornerRadius={4}
-                  />
-                  <Text
-                    text={rel.predicate}
-                    fontSize={9}
-                    fontFamily="monospace"
-                    fill="#38bdf8"
-                    padding={4}
-                    align="center"
-                    width={70}
-                  />
-                </Group>
-              </Group>
-            );
-          })}
         </Layer>
       </Stage>
     </div>

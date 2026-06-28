@@ -2,17 +2,29 @@
 
 import React, { useState } from "react";
 import { SceneGraph } from "@/types/scene";
-import { Box, CheckCircle2, Search, ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
+import { Box, CheckCircle2, Search, ChevronLeft, ChevronRight, Trash2, Layers, GitMerge } from "lucide-react";
 
 interface LayersSidebarProps {
   sceneGraph: SceneGraph | null;
   selectedObjectId: string | null;
+  selectedObjectIds: string[];
   onSelectObject: (id: string) => void;
+  onToggleSelectObject: (id: string, isMulti: boolean) => void;
+  onMergeObjects?: () => void;
   onDeleteObject?: (id: string) => void;
   width?: number;
 }
 
-export default function LayersSidebar({ sceneGraph, selectedObjectId, onSelectObject, onDeleteObject, width = 240 }: LayersSidebarProps) {
+export default function LayersSidebar({
+  sceneGraph,
+  selectedObjectId,
+  selectedObjectIds,
+  onSelectObject,
+  onToggleSelectObject,
+  onMergeObjects,
+  onDeleteObject,
+  width = 240
+}: LayersSidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [activeTab, setActiveTab] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -72,6 +84,22 @@ export default function LayersSidebar({ sceneGraph, selectedObjectId, onSelectOb
           </div>
         </div>
 
+        {/* Multi-Selection Combine Action Bar */}
+        {selectedObjectIds.length >= 2 && onMergeObjects && (
+          <div className="p-2 bg-gradient-to-r from-blue-950/90 to-cyan-950/90 border-b border-cyan-800/60 flex items-center justify-between animate-fade-in shrink-0">
+            <span className="text-[11px] font-mono text-cyan-300 font-medium flex items-center gap-1">
+              <GitMerge className="w-3.5 h-3.5" />
+              <span>Selected ({selectedObjectIds.length})</span>
+            </span>
+            <button
+              onClick={onMergeObjects}
+              className="px-2.5 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-[10px] font-medium transition-all shadow-md shadow-cyan-600/30 flex items-center gap-1"
+            >
+              <span>Combine Objects</span>
+            </button>
+          </div>
+        )}
+
         {/* Search */}
         <div className="p-2 shrink-0">
           <div className="relative flex items-center">
@@ -108,7 +136,7 @@ export default function LayersSidebar({ sceneGraph, selectedObjectId, onSelectOb
           ))}
         </div>
 
-        {/* Object Tree List */}
+        {/* Object Tree List with Multi-Selection Support */}
         <div className="p-2 space-y-0.5 overflow-y-auto flex-1">
           {filteredObjects.length === 0 ? (
             <div className="text-center py-6 text-[11px] text-slate-500 font-mono">
@@ -116,11 +144,11 @@ export default function LayersSidebar({ sceneGraph, selectedObjectId, onSelectOb
             </div>
           ) : (
             filteredObjects.map((obj) => {
-              const isSelected = selectedObjectId === obj.id;
+              const isSelected = selectedObjectIds.includes(obj.id) || selectedObjectId === obj.id;
               return (
                 <div
                   key={obj.id}
-                  onClick={() => onSelectObject(obj.id)}
+                  onClick={(e) => onToggleSelectObject(obj.id, e.shiftKey || e.metaKey || e.ctrlKey)}
                   className={`w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between text-xs transition-all cursor-pointer group/item ${
                     isSelected
                       ? "bg-blue-600/20 text-blue-200 border border-blue-500/40 font-medium"
@@ -128,6 +156,15 @@ export default function LayersSidebar({ sceneGraph, selectedObjectId, onSelectOb
                   }`}
                 >
                   <div className="flex items-center gap-2 truncate">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={(e) => {
+                        e.stopPropagation();
+                        onToggleSelectObject(obj.id, true);
+                      }}
+                      className="w-3 h-3 rounded bg-slate-900 border-slate-700 text-cyan-500 focus:ring-0 cursor-pointer"
+                    />
                     <Box className={`w-3.5 h-3.5 shrink-0 ${isSelected ? "text-cyan-400" : "text-slate-500"}`} />
                     <div className="truncate">
                       <div className="truncate font-mono font-medium text-xs">{obj.class}</div>
@@ -163,6 +200,7 @@ export default function LayersSidebar({ sceneGraph, selectedObjectId, onSelectOb
           <CheckCircle2 className="w-3 h-3 text-emerald-400" />
           Scene Live
         </span>
+        <span className="text-[9px] text-slate-600">Shift+Click to Multi-Select</span>
       </div>
     </aside>
   );

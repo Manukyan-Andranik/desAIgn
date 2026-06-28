@@ -1,4 +1,9 @@
 {
   "chair": "lounge armchair",
-  "door": "window"
+  "door": "window",
+  "lounge armchair": "chair",
+  "window": "wall",
+  "plant": "building",
+  "television": "book",
+  "painting": "wall"
 }

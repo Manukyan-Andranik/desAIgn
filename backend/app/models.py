@@ -49,6 +49,11 @@ class UpdateObjectClassRequest(BaseModel):
     object_id: str = Field(..., description="Target object ID to update")
     new_class: str = Field(..., description="New object class/name specified by user")
 
+class MergeObjectsRequest(BaseModel):
+    image_id: str = Field(..., description="Scene graph image ID")
+    object_ids: List[str] = Field(..., description="List of object IDs to merge together")
+    new_class: Optional[str] = Field(None, description="Optional override class name for merged object")
+
 class SceneRelationship(BaseModel):
     subject_id: str = Field(..., description="Subject object ID")
     predicate: str = Field(..., description="Spatial or structural relation (on, next_to, mounted_on, beside, under, above)")

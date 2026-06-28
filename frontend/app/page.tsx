@@ -39,6 +39,7 @@ const STYLE_OPTIONS = [
 export default function StudioPage() {
   const [sceneGraph, setSceneGraph] = useState<SceneGraph | null>(null);
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null);
+  const [selectedObjectIds, setSelectedObjectIds] = useState<string[]>([]);
   const [hoveredObjectId, setHoveredObjectId] = useState<string | null>(null);
   const [showBBoxes, setShowBBoxes] = useState<boolean>(false);
   const [notification, setNotification] = useState<{ message: string; model?: string; type?: "info" | "success" | "ai" } | null>(null);
@@ -185,6 +186,7 @@ export default function StudioPage() {
         if (selectedObjectId === deletedId) {
           setSelectedObjectId(null);
         }
+        setSelectedObjectIds((prev) => prev.filter((i) => i !== deletedId));
         setSceneGraph((prev) => {
           if (!prev) return prev;
           return {
@@ -199,6 +201,43 @@ export default function StudioPage() {
       }
     } catch (err) {
       console.error("Failed to delete object:", err);
+    }
+  };
+
+  const handleToggleSelectObject = (id: string, isMulti: boolean) => {
+    if (isMulti) {
+      setSelectedObjectIds((prev) =>
+        prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+      );
+      setSelectedObjectId(id);
+    } else {
+      setSelectedObjectIds([id]);
+      setSelectedObjectId(id);
+    }
+  };
+
+  const handleMergeObjects = async () => {
+    if (selectedObjectIds.length < 2) return;
+    try {
+      const res = await fetch("http://localhost:8000/api/v1/object/merge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          image_id: imageId,
+          object_ids: selectedObjectIds
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        showToast(data.message, "Object Merger Engine", "success");
+        if (data.merged_object) {
+          setSelectedObjectId(data.merged_object.id);
+          setSelectedObjectIds([data.merged_object.id]);
+        }
+        fetchSceneGraph(imageId);
+      }
+    } catch (err) {
+      console.error("Failed to merge objects:", err);
     }
   };
 
@@ -282,7 +321,10 @@ export default function StudioPage() {
         <LayersSidebar
           sceneGraph={sceneGraph}
           selectedObjectId={selectedObjectId}
+          selectedObjectIds={selectedObjectIds}
           onSelectObject={(id) => setSelectedObjectId(id)}
+          onToggleSelectObject={handleToggleSelectObject}
+          onMergeObjects={handleMergeObjects}
           onDeleteObject={handleObjectDeleted}
           width={leftWidth}
         />

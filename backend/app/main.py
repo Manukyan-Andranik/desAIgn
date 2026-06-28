@@ -12,7 +12,7 @@ from app.database import engine, Base, get_db
 from app import db_models
 from app.models import (
     SceneGraph, SceneObject, SceneRelationship, Point, NormalVector, MaskSegmentation, SegmentationData,
-    OrchestratorRequest, OrchestratorResponse, UpdateObjectClassRequest,
+    OrchestratorRequest, OrchestratorResponse, UpdateObjectClassRequest, MergeObjectsRequest,
     DetectionRequest, DetectionResponse, DetectedObjectItem,
     SegmentSceneResponse, SegmentSceneItem,
     InteriorSegmentationResponse, InteriorObjectInstance,
@@ -374,6 +374,66 @@ def delete_object(image_id: str, object_id: str, db: Session = Depends(get_db)):
     scene_graph.version += 1
     save_scene_graph_to_db(db, scene_graph)
     return {"status": "success", "message": f"Deleted object '{object_id}' from scene graph.", "deleted_object_id": object_id}
+
+@app.post("/api/v1/object/merge")
+def merge_objects(req: MergeObjectsRequest, db: Session = Depends(get_db)):
+    scene_graph = load_scene_graph_from_db(db, req.image_id)
+    target_objs = [o for o in scene_graph.objects if o.id in req.object_ids]
+    
+    if len(target_objs) < 2:
+        raise HTTPException(status_code=400, detail="At least 2 valid objects must be selected to perform a merge operation.")
+
+    primary_target = target_objs[0]
+    other_targets = target_objs[1:]
+    other_ids = set(o.id for o in other_targets)
+
+    # 1. Unified Polygon Mask Points Concatenation
+    merged_points = []
+    for obj in target_objs:
+        if obj.segmentation and obj.segmentation.points:
+            merged_points.extend(obj.segmentation.points)
+
+    # 2. Unified Class, Confidence & Depth Calculation
+    if req.new_class and req.new_class.strip():
+        primary_target.object_class = req.new_class.strip().lower()
+    
+    primary_target.confidence = round(max(o.confidence for o in target_objs), 4)
+    primary_target.depth = round(sum(o.depth for o in target_objs) / len(target_objs), 2)
+    
+    if merged_points:
+        primary_target.segmentation.points = merged_points
+
+    # 3. Remove merged sub-objects from scene graph
+    scene_graph.objects = [o for o in scene_graph.objects if o.id not in other_ids]
+
+    # 4. Re-point spatial relationships & clean up self-loops
+    if scene_graph.relationships:
+        updated_rels = []
+        seen_rels = set()
+        for r in scene_graph.relationships:
+            subj = primary_target.id if r.subject_id in other_ids else r.subject_id
+            obj = primary_target.id if r.object_id in other_ids else r.object_id
+            
+            # Skip self-referential relationships resulting from merge
+            if subj == obj:
+                continue
+                
+            rel_key = (subj, r.predicate, obj)
+            if rel_key not in seen_rels:
+                seen_rels.add(rel_key)
+                r.subject_id = subj
+                r.object_id = obj
+                updated_rels.append(r)
+                
+        scene_graph.relationships = updated_rels
+
+    scene_graph.version += 1
+    save_scene_graph_to_db(db, scene_graph)
+    return {
+        "status": "success", 
+        "message": f"Successfully combined {len(target_objs)} objects into unified '{primary_target.object_class}'.",
+        "merged_object": primary_target
+    }
 
 @app.post("/api/v1/orchestrate", response_model=OrchestratorResponse)
 async def orchestrate_prompt(request: OrchestratorRequest, db: Session = Depends(get_db)):

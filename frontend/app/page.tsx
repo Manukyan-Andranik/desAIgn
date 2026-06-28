@@ -9,7 +9,7 @@ import HomePage from "@/components/HomePage";
 import ProjectsPage from "@/components/ProjectsPage";
 import AuthModal from "@/components/AuthModal";
 import ProgressLoader from "@/components/ProgressLoader";
-import UserSwitcher from "@/components/UserSwitcher";
+import UserAccountMenu from "@/components/UserAccountMenu";
 import { Sparkles, Upload, RefreshCw, Cpu, CheckCircle2, Scan, Loader2, Home, Palette, Sliders, Layers, ArrowRight, X, LayoutDashboard, Plus, Trash2, Folder } from "lucide-react";
 
 const InteractiveCanvas = dynamic(() => import("@/components/InteractiveCanvas"), {
@@ -224,6 +224,16 @@ export default function StudioPage() {
     } catch (err) {
       console.error("Failed to delete project:", err);
     }
+  };
+
+  const handleLogOut = () => {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("antigravity_userId");
+    }
+    setActiveUser(null);
+    setProjects([]);
+    showToast("Logged out of account session.", "Account System", "info");
+    setShowAuthModal(true);
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -517,22 +527,17 @@ export default function StudioPage() {
             </>
           )}
 
-          {/* Active User Switcher / Auth Trigger */}
-          <UserSwitcher
+          {/* Active User Account Menu & Auth Manager */}
+          <UserAccountMenu
             users={users}
             activeUser={activeUser}
             onSelectUser={(u) => {
               setActiveUser(u);
-              showToast(`Switched workspace user to ${u.name}`, "User Manager", "info");
+              showToast(`Switched active workspace user to ${u.name}`, "Account System", "info");
             }}
+            onLogOut={handleLogOut}
+            onOpenAuthModal={() => setShowAuthModal(true)}
           />
-
-          <button
-            onClick={() => setShowAuthModal(true)}
-            className="hidden sm:flex px-3 py-1.5 bg-slate-800/90 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-semibold items-center space-x-1.5 transition-all border border-slate-700/80"
-          >
-            <span>Sign In / Auth</span>
-          </button>
 
           <button
             onClick={() => fileInputRef.current?.click()}

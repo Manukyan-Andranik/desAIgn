@@ -9,6 +9,7 @@ class UserRecord(Base):
     id = Column(String, primary_key=True, index=True)
     name = Column(String, nullable=False)
     email = Column(String, nullable=False)
+    password_hash = Column(String, nullable=True)
     avatar = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 

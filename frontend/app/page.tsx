@@ -266,6 +266,11 @@ export default function StudioPage() {
 
   return (
     <div className="w-screen h-screen flex flex-col bg-[#090a0f] text-slate-100 overflow-hidden select-none font-sans">
+      <ProgressLoader
+        isLoading={uploading || isOrchestrating}
+        title={uploading ? `Analyzing ${roomType} Render...` : "Synthesizing AI Edit Instructions..."}
+      />
+
       <input
         type="file"
         ref={fileInputRef}
@@ -428,11 +433,6 @@ export default function StudioPage() {
               showBBoxes={showBBoxes}
               onSelectObject={(id) => handleToggleSelectObject(id, false)}
               onHoverObject={(id) => setHoveredObjectId(id)}
-            />
-
-            <ProgressLoader
-              isLoading={uploading || isOrchestrating}
-              title={uploading ? `Analyzing ${roomType} Render...` : "Synthesizing AI Edit Instructions..."}
             />
           </main>
 

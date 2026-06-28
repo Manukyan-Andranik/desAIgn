@@ -6,6 +6,7 @@ import { SceneGraph, SceneObject, OrchestratorResponse } from "@/types/scene";
 import LayersSidebar from "@/components/LayersSidebar";
 import Inspector from "@/components/Inspector";
 import HomePage from "@/components/HomePage";
+import ProgressLoader from "@/components/ProgressLoader";
 import { Sparkles, Upload, RefreshCw, Cpu, CheckCircle2, Scan, Loader2, Home, Palette, Sliders, Layers, ArrowRight, X, LayoutDashboard } from "lucide-react";
 
 const InteractiveCanvas = dynamic(() => import("@/components/InteractiveCanvas"), {
@@ -401,15 +402,10 @@ export default function StudioPage() {
               onHoverObject={(id) => setHoveredObjectId(id)}
             />
 
-            {/* Minimal Glassmorphism Loading Overlay */}
-            {(uploading || isOrchestrating) && (
-              <div className="absolute inset-0 z-40 bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center animate-fade-in p-4 select-none">
-                <div className="px-6 py-4 rounded-2xl border border-slate-700/80 bg-slate-900/90 shadow-2xl flex items-center space-x-3.5 font-mono text-xs text-slate-200">
-                  <Loader2 className="w-5 h-5 text-cyan-400 animate-spin" />
-                  <span>{uploading ? `Running ${roomType} Vision Pipeline (50%+ Confidence Filter)...` : "Synthesizing AI Edit..."}</span>
-                </div>
-              </div>
-            )}
+            <ProgressLoader
+              isLoading={uploading || isOrchestrating}
+              title={uploading ? `Analyzing ${roomType} Render...` : "Synthesizing AI Edit Instructions..."}
+            />
           </main>
 
           {/* Right Resizer Handle */}

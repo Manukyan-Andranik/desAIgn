@@ -165,7 +165,13 @@ export default function LayersSidebar({
               return (
                 <div
                   key={obj.id}
-                  onClick={() => onToggleSelectObject(obj.id, true)}
+                  onClick={(e) => {
+                    if (e.shiftKey || e.metaKey || e.ctrlKey) {
+                      onToggleSelectObject(obj.id, true);
+                    } else {
+                      onSelectObject(obj.id);
+                    }
+                  }}
                   className={`w-full text-left px-3 py-2 rounded-xl flex items-center justify-between text-xs transition-all cursor-pointer group/item border ${
                     isHighlighted
                       ? "bg-cyan-950/60 text-cyan-100 border-cyan-500/60 font-semibold shadow-md shadow-cyan-950/50"

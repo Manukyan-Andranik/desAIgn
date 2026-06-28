@@ -252,9 +252,9 @@ class AntigravityVisionPipeline:
         for inst in interior_instances:
             cls = inst.object_class
             mask_data = inst.mask or inst.segmentation
-            pts = [Point(x=p[0], y=p[1]) for p in (mask_data.points or [])]
-            if not pts:
+            if not mask_data or not mask_data.points:
                 continue
+            pts = [Point(x=p[0], y=p[1]) for p in mask_data.points]
 
             xs = [p.x for p in pts]
             ys = [p.y for p in pts]

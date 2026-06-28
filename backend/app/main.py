@@ -501,6 +501,8 @@ def merge_objects(req: MergeObjectsRequest, db: Session = Depends(get_db)):
     for obj in target_objs:
         if obj.segmentation and obj.segmentation.points:
             merged_points.extend(obj.segmentation.points)
+        elif obj.polygon:
+            merged_points.extend([[p.x, p.y] for p in obj.polygon])
 
     # 2. Unified Class, Confidence & Depth Calculation
     if req.new_class and req.new_class.strip():
@@ -510,7 +512,11 @@ def merge_objects(req: MergeObjectsRequest, db: Session = Depends(get_db)):
     primary_target.depth = round(sum(o.depth for o in target_objs) / len(target_objs), 2)
     
     if merged_points:
-        primary_target.segmentation.points = merged_points
+        if not primary_target.segmentation:
+            primary_target.segmentation = MaskSegmentation(type="polygon", points=merged_points)
+        else:
+            primary_target.segmentation.points = merged_points
+        primary_target.polygon = [Point(x=float(pt[0]), y=float(pt[1])) for pt in merged_points]
 
     # 3. Remove merged sub-objects from scene graph
     scene_graph.objects = [o for o in scene_graph.objects if o.id not in other_ids]

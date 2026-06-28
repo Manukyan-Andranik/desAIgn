@@ -64,6 +64,41 @@ export default function StudioPage() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [imageId, setImageId] = useState("demo_render_01");
+  const [isInitialized, setIsInitialized] = useState(false);
+
+  // Restore State from localStorage on Mount
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const savedImageId = localStorage.getItem("antigravity_imageId");
+      const savedViewMode = localStorage.getItem("antigravity_viewMode") as "home" | "studio";
+      const savedRoomType = localStorage.getItem("antigravity_roomType");
+      const savedDesignStyle = localStorage.getItem("antigravity_designStyle");
+      const savedLeftWidth = localStorage.getItem("antigravity_leftWidth");
+      const savedRightWidth = localStorage.getItem("antigravity_rightWidth");
+
+      if (savedImageId) setImageId(savedImageId);
+      if (savedViewMode) setViewMode(savedViewMode);
+      if (savedRoomType) setRoomType(savedRoomType);
+      if (savedDesignStyle) setDesignStyle(savedDesignStyle);
+      if (savedLeftWidth) setLeftWidth(parseInt(savedLeftWidth, 10));
+      if (savedRightWidth) setRightWidth(parseInt(savedRightWidth, 10));
+
+      setIsInitialized(true);
+      fetchSceneGraph(savedImageId || "demo_render_01");
+    }
+  }, []);
+
+  // Synchronize State Updates to localStorage
+  useEffect(() => {
+    if (isInitialized && typeof window !== "undefined") {
+      localStorage.setItem("antigravity_imageId", imageId);
+      localStorage.setItem("antigravity_viewMode", viewMode);
+      localStorage.setItem("antigravity_roomType", roomType);
+      localStorage.setItem("antigravity_designStyle", designStyle);
+      localStorage.setItem("antigravity_leftWidth", leftWidth.toString());
+      localStorage.setItem("antigravity_rightWidth", rightWidth.toString());
+    }
+  }, [imageId, viewMode, roomType, designStyle, leftWidth, rightWidth, isInitialized]);
 
   // Mouse drag listeners for panel resizing
   useEffect(() => {

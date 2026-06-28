@@ -170,8 +170,9 @@ class YOLOArchitecturalDetector:
                         if len(pts) >= 3:
                             poly_pts = [[float(p[0]), float(p[1])] for p in pts]
 
+                    clean_name = raw_cls_name.replace(" ", "_")
                     candidates.append({
-                        "id": f"{prefix}int_{raw_cls_name}_{len(candidates) + 1:02d}",
+                        "id": f"{prefix}int_{clean_name}_{len(candidates) + 1:02d}",
                         "class": raw_cls_name,
                         "bbox": [int(b[0]), int(b[1]), int(b[2]), int(b[3])],
                         "confidence": round(conf, 3),

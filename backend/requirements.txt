@@ -9,3 +9,9 @@ httpx>=0.26.0
 python-dotenv>=1.0.0
 ultralytics>=8.1.0
 opencv-python-headless>=4.9.0
+# ─── Multi-Model Vision Pipeline ─────────────────────────────────
+torch>=2.1.0
+torchvision>=0.16.0
+transformers>=4.40.0
+groundingdino-py>=0.4.0
+segment-anything>=1.0

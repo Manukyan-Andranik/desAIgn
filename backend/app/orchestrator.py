@@ -1,50 +1,87 @@
+"""
+AI Orchestrator Engine — Structured Prompt & Multi-Object Action Synthesizer
+=============================================================================
+Converts natural language user instructions into structured multi-object action plans,
+supporting mask-level precision, multi-selection editing, and material replacement.
+"""
+
 import re
-from typing import Tuple
-from app.models import OrchestratorRequest, OrchestratorResponse, OrchestratedAction, SceneObject
+from typing import List, Optional, Tuple, Dict, Any
+from app.models import (
+    OrchestratorRequest, OrchestratorResponse, OrchestratedAction, 
+    SceneObject, StructuredPromptInstruction, StructuredActionItem
+)
 
-def parse_prompt_to_action(prompt: str, target_id: str) -> OrchestratedAction:
+def parse_prompt_to_structured_instruction(prompt: str, targets: List[str]) -> StructuredPromptInstruction:
     """
-    Mock AI Orchestrator NLP parser that converts natural language prompts
-    into actionable structured JSON payloads for generative image models.
+    Parses complex multi-action prompts into structured JSON instructions.
+    Example: 'change sofa to modern black leather, remove table' -> structured actions.
     """
-    lower_prompt = prompt.lower()
-    
-    # Simple rule-based mock NLP extraction for MVP demo
-    extracted_material = None
-    if "black metal" in lower_prompt or "standing seam" in lower_prompt:
-        extracted_material = "black standing seam metal"
-    elif "wood" in lower_prompt or "timber" in lower_prompt or "cedar" in lower_prompt:
-        extracted_material = "charred cedar shou sugi ban"
-    elif "glass" in lower_prompt or "frosted" in lower_prompt:
-        extracted_material = "frosted privacy glass"
-    elif "concrete" in lower_prompt or "board-formed" in lower_prompt:
-        extracted_material = "board-formed architectural concrete"
-    elif "marble" in lower_prompt or "carrara" in lower_prompt:
-        extracted_material = "white carrara marble"
+    lower_prompt = prompt.lower().strip()
+    actions: List[StructuredActionItem] = []
+
+    # Check for removal instruction
+    if "remove" in lower_prompt or "delete" in lower_prompt or "clear" in lower_prompt:
+        for target in targets:
+            actions.append(StructuredActionItem(
+                target=target,
+                action="remove",
+                value="removed"
+            ))
     else:
-        # Fallback dynamic extraction
-        words = prompt.split()
-        extracted_material = " ".join(words[-3:]) if len(words) >= 3 else prompt
+        # Material replacement or recolor instruction
+        extracted_value = prompt
+        if "leather" in lower_prompt:
+            extracted_value = "black Italian leather" if "black" in lower_prompt else "cognac leather"
+        elif "marble" in lower_prompt:
+            extracted_value = "Carrara white marble"
+        elif "wood" in lower_prompt or "oak" in lower_prompt:
+            extracted_value = "natural wide-plank oak timber"
+        elif "metal" in lower_prompt or "steel" in lower_prompt:
+            extracted_value = "matte black powder-coated steel"
+        elif "red" in lower_prompt:
+            extracted_value = "red crimson finish"
 
-    return OrchestratedAction(
-        targets=[target_id],
-        action="replace_material",
-        material=extracted_material,
-        color="dark" if "black" in lower_prompt or "dark" in lower_prompt else "natural",
-        style="modern"
+        for target in targets:
+            actions.append(StructuredActionItem(
+                target=target,
+                action="replace_material",
+                value=extracted_value
+            ))
+
+    return StructuredPromptInstruction(actions=actions)
+
+
+def execute_orchestration(request: OrchestratorRequest, current_objects: List[SceneObject]) -> OrchestratorResponse:
+    """
+    Executes orchestration for single or multi-selected target objects.
+    """
+    targets = request.target_ids if request.target_ids else ([request.target_id] if request.target_id else [])
+    if not targets and current_objects:
+        targets = [current_objects[0].id]
+
+    structured_plan = parse_prompt_to_structured_instruction(request.prompt, targets)
+    primary_target = targets[0] if targets else "obj_01"
+
+    # Determine primary action for backward compatibility schema
+    primary_action_item = structured_plan.actions[0] if structured_plan.actions else StructuredActionItem(target=primary_target, action="replace_material", value=request.prompt)
+
+    action = OrchestratedAction(
+        targets=targets,
+        action=primary_action_item.action,
+        material=primary_action_item.value,
+        color="dark" if "black" in request.prompt.lower() or "dark" in request.prompt.lower() else "natural",
+        style="modern architectural"
     )
 
-def execute_orchestration(request: OrchestratorRequest, current_object: SceneObject) -> OrchestratorResponse:
-    action = parse_prompt_to_action(request.prompt, request.target_id)
-    
-    # Update object material
-    updated_obj = current_object.model_copy()
-    if action.material:
+    primary_obj = current_objects[0] if current_objects else None
+    updated_obj = primary_obj.model_copy() if primary_obj else None
+    if updated_obj and action.material:
         updated_obj.material = action.material
-        
+
     return OrchestratorResponse(
         status="success",
         action=action,
         updated_object=updated_obj,
-        message=f"Successfully orchestrated action '{action.action}' for object target '{request.target_id}'."
+        message=f"Successfully executed structured instruction across {len(targets)} selected objects."
     )

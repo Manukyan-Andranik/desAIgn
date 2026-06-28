@@ -96,15 +96,16 @@ export default function StudioPage() {
       "ai"
     );
 
-    if (res.updated_object && sceneGraph) {
+    if ((res.updated_object || res.updated_image_url) && sceneGraph) {
       setSceneGraph((prev) => {
         if (!prev) return prev;
         return {
           ...prev,
           version: prev.version + 1,
-          objects: prev.objects.map((obj) =>
-            obj.id === res.updated_object?.id ? res.updated_object : obj
-          )
+          image_url: res.updated_image_url || prev.image_url,
+          objects: res.updated_object
+            ? prev.objects.map((obj) => (obj.id === res.updated_object?.id ? res.updated_object : obj))
+            : prev.objects
         };
       });
     }

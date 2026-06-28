@@ -18,8 +18,10 @@ export interface MaskSegmentation {
 export interface SceneObject {
   id: string;
   class: string;
+  layer?: string;
   polygon: Point[];
   segmentation?: MaskSegmentation;
+  mask?: MaskSegmentation;
   bbox?: number[];
   parent?: string;
   depth: number;
@@ -56,5 +58,6 @@ export interface OrchestratorResponse {
   status: string;
   action: OrchestratorAction;
   updated_object?: SceneObject;
+  updated_image_url?: string;
   message: string;
 }

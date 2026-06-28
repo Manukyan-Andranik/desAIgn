@@ -1,206 +1,199 @@
 """
-Antigravity Vision Pipeline — Interior Scene Graph Builder
-==================================================
-Constructs scene graphs from real YOLOv8-Seg neural detections.
-Uses actual polygon masks from neural tensors when available,
-falls back to honest bbox-derived 4-point polygons otherwise.
+Antigravity Vision Pipeline — Multi-Model Scene Graph Builder
+==============================================================
+Production 3-Model MVP Core Stack for interior scene understanding:
 
-Pipeline Steps:
-    1. Grounding DINO / YOLO Detection (real inference)
-    2. SAM2 Segmentation (neural polygon extraction)
-    3. Depth Anything V2 (depth estimation)
-    4. DINOv2 (surface normal estimation)
-    5. OpenCLIP (material & style classification)
-    6. Scene Graph Builder (assembles SceneGraph response)
+    Stage 1: Grounding DINO → Open-vocabulary text-prompted object detection
+    Stage 2: SAM (Segment Anything) → Pixel-perfect mask segmentation
+    Stage 3: Depth Anything V2 → Monocular metric depth estimation
+    Stage 4: Material Spec Lookup → Static curated material table
+    Stage 5: Scene Graph Assembly → SceneGraph JSON response
+
+Pipeline:
+    Render → Grounding DINO → SAM → Depth Anything V2 → Scene Graph Builder
 """
 
 import io
+import time
 from PIL import Image
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any
 from app.models import SceneGraph, SceneObject, Point, NormalVector, MaskSegmentation
-from app.detector import object_detector
+from app.logger import log_action
+
+# ─── Import 3-Model Pipeline Modules ─────────────────────────────────────────
+from app.grounding_dino import grounding_dino_detector
+from app.sam_segmentor import sam_segmentor
+from app.depth_estimator import depth_estimator
+
+# ─── Legacy Fallback Import ──────────────────────────────────────────────────
+from app.interior_detector import interior_pipeline, EXPLICIT_TAXONOMY_MAP, BACKGROUND_STRUCTURAL_MAP
+
+
+# ─── Layer Categorization ────────────────────────────────────────────────────
+def get_layer_category(cls: str) -> str:
+    """Classify detected object into scene layer taxonomy."""
+    structural = {"wall", "floor", "ceiling", "door", "window", "stairway", "column", "beam"}
+    furniture = {"sofa", "chair", "table", "bed", "desk", "wardrobe", "cabinet", "shelf", "bookcase"}
+    decor = {"plant", "lampshade", "lamp", "painting", "mirror", "clock", "vase", "pillow", "curtain", "rug", "television"}
+    if cls in structural:
+        return "structural"
+    elif cls in furniture:
+        return "furniture"
+    elif cls in decor:
+        return "decor"
+    return "background"
+
+
+# ─── Curated Material Specifications ────────────────────────────────────────
+MATERIAL_SPECS = {
+    "wall": {"material": "Architectural Plaster Wall", "reflectivity": 0.10, "roughness": 0.80, "color_hex": "#E6E0D4", "sub_components": ["Drywall", "Baseboard"]},
+    "floor": {"material": "Natural Wide-Plank Oak Flooring", "reflectivity": 0.35, "roughness": 0.30, "color_hex": "#C4A482", "sub_components": ["Timber planks"]},
+    "ceiling": {"material": "Matte White Acoustic Ceiling", "reflectivity": 0.05, "roughness": 0.90, "color_hex": "#F8F8F8", "sub_components": ["Plasterboard"]},
+    "sofa": {"material": "Italian Bouclé Fabric Upholstery", "reflectivity": 0.10, "roughness": 0.85, "color_hex": "#E2DFD8", "sub_components": ["Cushions", "Timber frame"]},
+    "table": {"material": "Walnut Hardwood & Nero Marquina Marble", "reflectivity": 0.45, "roughness": 0.20, "color_hex": "#2B2625", "sub_components": ["Marble top", "Steel legs"]},
+    "chair": {"material": "Molded Plywood & Aniline Leather", "reflectivity": 0.30, "roughness": 0.40, "color_hex": "#4A3525", "sub_components": ["Shell frame", "Leather pads"]},
+    "lampshade": {"material": "Brushed Brass & Frosted Glass", "reflectivity": 0.75, "roughness": 0.10, "color_hex": "#D4AF37", "sub_components": ["Brass stem", "Glass shade"]},
+    "lamp": {"material": "Brushed Brass & Frosted Glass", "reflectivity": 0.75, "roughness": 0.10, "color_hex": "#D4AF37", "sub_components": ["Brass stem", "Glass shade"]},
+    "window": {"material": "Low-E Double Glazed Glass & Aluminum Frame", "reflectivity": 0.85, "roughness": 0.05, "color_hex": "#88B04B", "sub_components": ["Glass pane", "Frame"]},
+    "door": {"material": "Solid Core White Oak Door", "reflectivity": 0.25, "roughness": 0.45, "color_hex": "#A08A75", "sub_components": ["Door panel", "Brass handle"]},
+    "rug": {"material": "Hand-Woven Wool Rug", "reflectivity": 0.05, "roughness": 0.95, "color_hex": "#D3D3D3", "sub_components": ["Weave fibers"]},
+    "plant": {"material": "Natural Organic Foliage", "reflectivity": 0.15, "roughness": 0.70, "color_hex": "#3B7A3B", "sub_components": ["Leaves", "Ceramic pot"]},
+    "shelf": {"material": "Matte Black Powder-Coated Steel Shelving", "reflectivity": 0.40, "roughness": 0.25, "color_hex": "#1A1A1A", "sub_components": ["Shelves", "Supports"]},
+    "curtain": {"material": "Custom Sheer Linen Drapery", "reflectivity": 0.12, "roughness": 0.80, "color_hex": "#F0EAE1", "sub_components": ["Drape fabric", "Curtain rod"]},
+    "television": {"material": "OLED Display & Matte Black Bezel", "reflectivity": 0.90, "roughness": 0.05, "color_hex": "#0A0A0A", "sub_components": ["Screen panel", "Stand"]},
+    "wardrobe": {"material": "Lacquered MDF & Brass Hardware", "reflectivity": 0.20, "roughness": 0.50, "color_hex": "#F5F0EB", "sub_components": ["Doors", "Shelves", "Handles"]},
+    "painting": {"material": "Oil on Canvas & Timber Frame", "reflectivity": 0.15, "roughness": 0.60, "color_hex": "#8B7355", "sub_components": ["Canvas", "Frame"]},
+    "mirror": {"material": "Silvered Glass & Brass Frame", "reflectivity": 0.95, "roughness": 0.02, "color_hex": "#C0C0C0", "sub_components": ["Mirror glass", "Frame"]},
+    "pillow": {"material": "Linen & Down Fill", "reflectivity": 0.08, "roughness": 0.90, "color_hex": "#E8E3DB", "sub_components": ["Cover", "Fill"]},
+    "clock": {"material": "Brushed Steel & Glass", "reflectivity": 0.50, "roughness": 0.15, "color_hex": "#888888", "sub_components": ["Face", "Housing"]},
+    "bed": {"material": "Upholstered Linen Headboard & Oak Frame", "reflectivity": 0.12, "roughness": 0.75, "color_hex": "#D5C8B8", "sub_components": ["Headboard", "Mattress", "Frame"]},
+    "desk": {"material": "Walnut Veneer & Steel Frame", "reflectivity": 0.35, "roughness": 0.30, "color_hex": "#5C4033", "sub_components": ["Desktop", "Legs", "Drawers"]},
+    "cabinet": {"material": "Lacquered MDF & Brass Hardware", "reflectivity": 0.20, "roughness": 0.50, "color_hex": "#F5F0EB", "sub_components": ["Doors", "Shelves"]},
+    "vase": {"material": "Ceramic Stoneware", "reflectivity": 0.25, "roughness": 0.60, "color_hex": "#C4A882", "sub_components": ["Body"]},
+}
 
 
 class AntigravityVisionPipeline:
     """
-    Advanced Architectural & Interior Scene Understanding System.
-    Reconstructs scene graphs from real neural inference outputs.
+    Production Multi-Model Interior Scene Understanding System.
+    
+    Competitive Advantage: Editable World Model
+    Render → Scene Understanding → Digital Scene Graph → AI Editing Orchestrator → Versioned Design System
     """
-
     def __init__(self):
-        self.detector = "YOLOv8-Seg (Interior Instance Segmentation)"
-        self.segmentor = "Neural Mask Tensor Extraction"
-        self.depth_engine = "Depth Anything V2"
-        self.classifier = "OpenCLIP (ViT-BIG-G)"
+        self.gdino = grounding_dino_detector
+        self.sam = sam_segmentor
+        self.depth = depth_estimator
 
-    def step_1_grounding_dino_detection(
-        self, width: int, height: int, image_id: str, file_bytes: bytes = b""
-    ) -> Tuple[List[Dict[str, Any]], float]:
-        """Step 1: Run real YOLO detection with neural mask extraction."""
-        return object_detector.detect(
-            width=width, height=height, image_id=image_id,
-            file_bytes=file_bytes, conf_threshold=0.35
+        # Check which models are available
+        self.has_gdino = self.gdino.model is not None
+        self.has_sam = self.sam.predictor is not None
+        self.has_depth = self.depth.model is not None
+
+        log_action("PIPELINE_INIT", f"Multi-Model Pipeline: GDINO={self.has_gdino} SAM={self.has_sam} Depth={self.has_depth}")
+
+    def analyze(self, file_bytes: bytes, image_id: str, image_url: str = None) -> SceneGraph:
+        """
+        Execute the full 3-model vision pipeline on an uploaded interior render.
+        
+        Stage 1: Grounding DINO → Object Detection (bounding boxes + classes)
+        Stage 2: SAM → Pixel-Perfect Mask Segmentation (polygons from boxes)
+        Stage 3: Depth Anything V2 → Per-Object Metric Depth
+        Stage 4: Material Spec Lookup → Material/Style Assignment
+        Stage 5: Scene Graph Assembly → SceneGraph Response
+        """
+        pipeline_start = time.time()
+
+        try:
+            img = Image.open(io.BytesIO(file_bytes))
+            width, height = img.size
+        except Exception:
+            width, height = 1920, 1080
+
+        log_action("PIPELINE_START", f"Analyzing render '{image_id}' ({width}x{height}) with 3-Model MVP Stack")
+
+        # ─── Check if new pipeline is available ───────────────────────
+        if not self.has_gdino:
+            log_action("PIPELINE_FALLBACK", "Grounding DINO unavailable. Falling back to legacy Mask2Former + YOLO pipeline.")
+            return self._legacy_analyze(file_bytes, image_id, image_url, width, height)
+
+        # ─── Stage 1: Grounding DINO Detection ───────────────────────
+        log_action("STAGE_1_START", "Running Grounding DINO open-vocabulary detection...")
+        detections, gdino_time = self.gdino.detect(
+            file_bytes=file_bytes,
+            image_id=image_id,
+            box_threshold=0.25,
+            text_threshold=0.20
         )
+        log_action("STAGE_1_COMPLETE", f"Grounding DINO: {len(detections)} objects detected in {gdino_time}ms")
 
-    def step_2_sam2_segmentation(
-        self, detected: List[Dict[str, Any]], width: int, height: int
-    ) -> List[Dict[str, Any]]:
-        """
-        Step 2: Extract segmentation polygons from neural inference.
+        if not detections:
+            log_action("PIPELINE_EMPTY", "No objects detected. Falling back to legacy pipeline.")
+            return self._legacy_analyze(file_bytes, image_id, image_url, width, height)
 
-        Priority:
-            1. Use neural_polygon from YOLOv8-Seg masks.xy (real pixel contour)
-            2. Fallback: create honest 4-point polygon from bounding box
+        # ─── Stage 2: SAM Segmentation ───────────────────────────────
+        log_action("STAGE_2_START", f"Running SAM pixel-perfect segmentation on {len(detections)} objects...")
+        detections = self.sam.segment(
+            file_bytes=file_bytes,
+            detections=detections,
+            image_id=image_id
+        )
+        log_action("STAGE_2_COMPLETE", "SAM segmentation complete")
 
-        No fabricated multi-point contour templates are generated.
-        """
-        segmented = []
+        # ─── Stage 3: Depth Anything V2 ──────────────────────────────
+        log_action("STAGE_3_START", "Running Depth Anything V2 monocular depth estimation...")
+        detections = self.depth.estimate_per_object_depth(
+            file_bytes=file_bytes,
+            detections=detections,
+            image_id=image_id
+        )
+        log_action("STAGE_3_COMPLETE", "Depth estimation complete")
 
-        for obj in detected:
-            neural_poly = obj.get("neural_polygon")
+        # ─── Stage 4 & 5: Material Lookup + Scene Graph Assembly ─────
+        scene_objects: List[SceneObject] = []
+        for det in detections:
+            cls = det["class"]
+            polygon_points = det.get("polygon", [])
+            pts = [Point(x=p[0], y=p[1]) for p in polygon_points]
 
-            if neural_poly and len(neural_poly) >= 3:
-                # Real neural polygon from model tensor — use directly
-                pts = neural_poly
-            elif "bbox" in obj and obj["bbox"]:
-                # Honest fallback: 4-point polygon derived from bounding box
-                x1, y1, x2, y2 = obj["bbox"]
-                pts = [
-                    [float(x1), float(y1)],
-                    [float(x2), float(y1)],
-                    [float(x2), float(y2)],
-                    [float(x1), float(y2)],
-                ]
-            else:
-                # No spatial data available — skip this object
+            if not pts:
                 continue
 
-            polygon_points = [Point(x=p[0], y=p[1]) for p in pts]
-            segmentation = MaskSegmentation(type="polygon", points=pts)
+            mask_data = MaskSegmentation(type="polygon", points=polygon_points)
 
-            segmented.append({
-                **obj,
-                "polygon": polygon_points,
-                "segmentation": segmentation,
+            spec = MATERIAL_SPECS.get(cls, {
+                "material": f"{cls.capitalize()} Surface Finish",
+                "reflectivity": 0.20, "roughness": 0.50,
+                "color_hex": "#888888", "sub_components": []
             })
 
-        return segmented
+            layer = get_layer_category(cls)
+            depth_val = det.get("depth", 2.5)
 
-    def step_3_depth_anything_v2(self, segmented: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Step 3: Estimate per-object depth for interior furniture and items."""
-        depth_lookup = {
-            "sofa": 2.2, "chair": 2.1, "bed": 2.3,
-            "coffee_table": 2.0, "dining_table": 2.0,
-            "tv": 3.0, "laptop": 1.5, "phone": 1.2, "remote": 1.5,
-            "plant": 2.4, "vase": 2.0, "clock": 3.5,
-            "refrigerator": 3.2, "oven": 2.8, "microwave": 2.5,
-            "sink": 2.6, "toilet": 2.4,
-            "bottle": 1.8, "cup": 1.5, "bowl": 1.6,
-        }
-        for obj in segmented:
-            obj["depth"] = depth_lookup.get(obj["class"], 2.5)
-        return segmented
-
-    def step_4_dinov2_surface_normals(self, depth_objs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Step 4: Estimate surface orientation for interior objects."""
-        for obj in depth_objs:
-            cls = obj["class"]
-            if cls in ["coffee_table", "dining_table"]:
-                obj["surface_orientation"] = "Horizontal Surface"
-                obj["normal_vector"] = NormalVector(nx=0.0, ny=1.0, nz=0.0)
-            elif cls in ["sofa", "chair", "bed"]:
-                obj["surface_orientation"] = "Ergonomic Furniture Surface"
-                obj["normal_vector"] = NormalVector(nx=0.2, ny=0.8, nz=0.5)
-            elif cls in ["tv", "clock", "sink"]:
-                obj["surface_orientation"] = "Wall-Mounted Vertical"
-                obj["normal_vector"] = NormalVector(nx=0.0, ny=0.0, nz=1.0)
-            else:
-                obj["surface_orientation"] = "Freestanding Object"
-                obj["normal_vector"] = NormalVector(nx=0.0, ny=0.5, nz=0.5)
-        return depth_objs
-
-    def step_5_clip_material_and_style_classification(
-        self, surface_objs: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
-        """Step 5: Classify materials and design style per object using lookup tables."""
-        material_specs = {
-            "sofa": {"material": "Italian Bouclé Fabric Upholstery", "reflectivity": 0.10, "roughness": 0.85, "color_hex": "#E2DFD8", "sub_components": ["Cushions", "Timber frame"]},
-            "coffee_table": {"material": "Walnut Hardwood & Nero Marquina Marble", "reflectivity": 0.45, "roughness": 0.20, "color_hex": "#2B2625", "sub_components": ["Marble top", "Brass legs"]},
-            "dining_table": {"material": "Solid Oak & Steel Frame", "reflectivity": 0.30, "roughness": 0.35, "color_hex": "#8B6914", "sub_components": ["Tabletop", "Steel legs"]},
-            "chair": {"material": "Molded Plywood & Aniline Leather", "reflectivity": 0.30, "roughness": 0.40, "color_hex": "#4A3525", "sub_components": ["Shell frame", "Leather pads"]},
-            "bed": {"material": "Linen Upholstered Headboard", "reflectivity": 0.08, "roughness": 0.90, "color_hex": "#D5CFC3", "sub_components": ["Headboard", "Mattress", "Frame"]},
-            "tv": {"material": "Tempered Glass & Aluminum Bezel", "reflectivity": 0.90, "roughness": 0.02, "color_hex": "#1A1A1A", "sub_components": ["Display panel", "Stand"]},
-            "plant": {"material": "Natural Foliage", "reflectivity": 0.15, "roughness": 0.70, "color_hex": "#3B7A3B", "sub_components": ["Leaves", "Pot"]},
-            "vase": {"material": "Glazed Ceramic", "reflectivity": 0.55, "roughness": 0.15, "color_hex": "#D4C5A9", "sub_components": ["Body", "Rim"]},
-            "laptop": {"material": "Anodized Aluminum", "reflectivity": 0.70, "roughness": 0.10, "color_hex": "#C0C0C0", "sub_components": ["Screen", "Keyboard", "Body"]},
-            "refrigerator": {"material": "Stainless Steel", "reflectivity": 0.80, "roughness": 0.08, "color_hex": "#A8A8A8", "sub_components": ["Door", "Handle", "Compressor"]},
-            "sink": {"material": "Porcelain & Chrome Faucet", "reflectivity": 0.65, "roughness": 0.12, "color_hex": "#E8E8E8", "sub_components": ["Basin", "Faucet"]},
-            "toilet": {"material": "Vitreous China", "reflectivity": 0.50, "roughness": 0.15, "color_hex": "#F5F5F0", "sub_components": ["Bowl", "Tank", "Seat"]},
-        }
-
-        style_map = {
-            "sofa": "warm minimalist",
-            "coffee_table": "mid-century modern",
-            "lamp": "scandinavian architectural",
-            "chair": "mid-century modern",
-            "bed": "contemporary luxury",
-            "tv": "modern minimalist",
-        }
-
-        for obj in surface_objs:
-            spec = material_specs.get(
-                obj["class"],
-                {
-                    "material": "Interior Material Finish",
-                    "confidence": obj.get("confidence", 0.90),
-                    "reflectivity": 0.20,
-                    "roughness": 0.50,
-                    "color_hex": "#888888",
-                    "sub_components": [],
-                }
-            )
-            obj["material"] = spec["material"]
-            # Preserve the real neural confidence — don't overwrite with lookup value
-            if "confidence" not in obj or obj["confidence"] is None:
-                obj["confidence"] = spec["confidence"]
-            obj["reflectivity"] = spec["reflectivity"]
-            obj["roughness"] = spec["roughness"]
-            obj["color_hex"] = spec["color_hex"]
-            obj["sub_components"] = spec["sub_components"]
-            obj["style"] = style_map.get(obj["class"], "modern interior design")
-
-        return surface_objs
-
-    def step_6_scene_graph_builder(
-        self,
-        processed: List[Dict[str, Any]],
-        image_id: str,
-        width: int,
-        height: int,
-        image_url: str = None
-    ) -> SceneGraph:
-        """Step 6: Assemble final SceneGraph from all pipeline outputs."""
-        scene_objects = []
-        for item in processed:
             scene_objects.append(SceneObject(
-                id=item["id"],
-                **{"class": item["class"]},
-                polygon=item["polygon"],
-                segmentation=item.get("segmentation"),
-                bbox=item.get("bbox"),
-                depth=item["depth"],
-                material=item["material"],
-                style=item["style"],
+                id=det["id"],
+                **{"class": cls},
+                layer=layer,
+                polygon=pts,
+                segmentation=mask_data,
+                mask=mask_data,
+                bbox=det["bbox"],
+                depth=depth_val,
+                material=spec["material"],
+                style="modern interior design",
                 editable=True,
-                confidence=item["confidence"],
-                parent=item.get("parent"),
-                surface_orientation=item.get("surface_orientation"),
-                normal_vector=item.get("normal_vector"),
-                reflectivity=item.get("reflectivity"),
-                roughness=item.get("roughness"),
-                color_hex=item.get("color_hex"),
-                sub_components=item.get("sub_components", [])
+                confidence=det["confidence"],
+                parent="room_structure" if cls in {"wall", "floor", "ceiling", "window", "door"} else "floor",
+                surface_orientation="Horizontal Plane" if cls in {"floor", "table", "rug", "desk", "bed"} else "Vertical Facade",
+                normal_vector=NormalVector(nx=0.0, ny=1.0, nz=0.0) if cls in {"floor", "table", "rug", "desk"} else NormalVector(nx=0.0, ny=0.0, nz=1.0),
+                reflectivity=spec["reflectivity"],
+                roughness=spec["roughness"],
+                color_hex=spec["color_hex"],
+                sub_components=spec["sub_components"]
             ))
+
+        pipeline_time = round((time.time() - pipeline_start) * 1000.0, 2)
+        log_action("PIPELINE_COMPLETE", f"3-Model Pipeline finished: {len(scene_objects)} scene objects in {pipeline_time}ms")
 
         return SceneGraph(
             image_id=image_id,
@@ -211,20 +204,75 @@ class AntigravityVisionPipeline:
             objects=scene_objects
         )
 
-    def analyze(self, file_bytes: bytes, image_id: str, image_url: str = None) -> SceneGraph:
-        """Run the full 6-step vision pipeline on an uploaded image."""
-        try:
-            img = Image.open(io.BytesIO(file_bytes))
-            width, height = img.size
-        except Exception:
-            width, height = 1200, 800
+    def _legacy_analyze(self, file_bytes: bytes, image_id: str, image_url: str, width: int, height: int) -> SceneGraph:
+        """Fallback to legacy Mask2Former ADE20K + YOLOv8 pipeline."""
+        log_action("LEGACY_PIPELINE_START", "Executing legacy Mask2Former + YOLO interior pipeline")
 
-        s1, proc_time = self.step_1_grounding_dino_detection(width, height, image_id, file_bytes)
-        s2 = self.step_2_sam2_segmentation(s1, width, height)
-        s3 = self.step_3_depth_anything_v2(s2)
-        s4 = self.step_4_dinov2_surface_normals(s3)
-        s5 = self.step_5_clip_material_and_style_classification(s4)
-        return self.step_6_scene_graph_builder(s5, image_id, width, height, image_url)
+        interior_instances, proc_time = interior_pipeline.segment_room(
+            file_bytes=file_bytes,
+            width=width,
+            height=height,
+            image_id=image_id,
+            conf_threshold=0.15,
+            output_format="polygon"
+        )
+
+        scene_objects: List[SceneObject] = []
+        for inst in interior_instances:
+            cls = inst.object_class
+            mask_data = inst.mask or inst.segmentation
+            pts = [Point(x=p[0], y=p[1]) for p in (mask_data.points or [])]
+            if not pts:
+                continue
+
+            xs = [p.x for p in pts]
+            ys = [p.y for p in pts]
+            bbox = [int(min(xs)), int(min(ys)), int(max(xs)), int(max(ys))]
+
+            spec = MATERIAL_SPECS.get(cls, {
+                "material": f"{cls.capitalize()} Surface Finish",
+                "reflectivity": 0.20, "roughness": 0.50,
+                "color_hex": "#888888", "sub_components": []
+            })
+
+            static_depths = {
+                "wall": 4.5, "floor": 3.0, "ceiling": 3.5, "sofa": 2.2, "chair": 2.1,
+                "table": 2.0, "lampshade": 2.8, "window": 4.0, "door": 3.8, "rug": 2.5,
+                "plant": 2.4, "shelf": 3.2, "curtain": 3.9
+            }
+
+            scene_objects.append(SceneObject(
+                id=inst.id,
+                **{"class": cls},
+                layer=inst.layer,
+                polygon=pts,
+                segmentation=mask_data,
+                mask=mask_data,
+                bbox=bbox,
+                depth=static_depths.get(cls, 2.5),
+                material=spec["material"],
+                style="modern interior design",
+                editable=inst.editable,
+                confidence=inst.confidence,
+                parent="room_structure" if cls in {"wall", "floor", "ceiling", "window", "door"} else "floor",
+                surface_orientation="Horizontal Plane" if cls in {"floor", "table", "rug"} else "Vertical Facade",
+                normal_vector=NormalVector(nx=0.0, ny=1.0, nz=0.0) if cls in {"floor", "table", "rug"} else NormalVector(nx=0.0, ny=0.0, nz=1.0),
+                reflectivity=spec["reflectivity"],
+                roughness=spec["roughness"],
+                color_hex=spec["color_hex"],
+                sub_components=spec["sub_components"]
+            ))
+
+        log_action("LEGACY_PIPELINE_COMPLETE", f"Legacy pipeline: {len(scene_objects)} objects in {proc_time}ms")
+
+        return SceneGraph(
+            image_id=image_id,
+            image_url=image_url,
+            width=width,
+            height=height,
+            version=1,
+            objects=scene_objects
+        )
 
 
 pipeline = AntigravityVisionPipeline()

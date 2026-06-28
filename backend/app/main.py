@@ -15,7 +15,9 @@ from app.models import (
     OrchestratorRequest, OrchestratorResponse,
     DetectionRequest, DetectionResponse, DetectedObjectItem,
     SegmentSceneResponse, SegmentSceneItem,
-    InteriorSegmentationResponse, InteriorObjectInstance
+    InteriorSegmentationResponse, InteriorObjectInstance,
+    PromptGenerationRequest, PromptGenerationResponse,
+    FrameGenerationRequest, FrameGenerationResponse
 )
 from app.vision import process_uploaded_image, generate_mock_scene_graph
 from app.detector import object_detector
@@ -309,33 +311,69 @@ def get_scene_graph(image_id: str, db: Session = Depends(get_db)):
 @app.post("/api/v1/orchestrate", response_model=OrchestratorResponse)
 async def orchestrate_prompt(request: OrchestratorRequest, db: Session = Depends(get_db)):
     scene_graph = load_scene_graph_from_db(db, request.image_id)
-    target_obj = next((obj for obj in scene_graph.objects if obj.id == request.target_id), None)
-    if not target_obj:
-        raise HTTPException(status_code=404, detail=f"Target object '{request.target_id}' not found.")
-
-    response = execute_orchestration(request, target_obj)
+    target_ids = request.target_ids if request.target_ids else ([request.target_id] if request.target_id else [])
     
-    await generative_engine.generate_inpaint(
+    target_objs = [obj for obj in scene_graph.objects if obj.id in target_ids]
+    if not target_objs and scene_graph.objects:
+        target_objs = [scene_graph.objects[0]]
+
+    primary_target = target_objs[0] if target_objs else None
+    if not primary_target:
+        raise HTTPException(status_code=404, detail="No valid target objects found for orchestration.")
+
+    response = execute_orchestration(request, target_objs)
+    
+    gen_result = await generative_engine.generate_inpaint(
         image_path=scene_graph.image_url or "default",
-        target_object=target_obj,
-        action=response.action
+        target_object=primary_target,
+        action=response.action,
+        user_prompt=request.prompt
     )
+
+    new_img_url = gen_result.get("generated_image_url")
+    response.updated_image_url = new_img_url
 
     history_rec = db_models.OrchestrationHistoryRecord(
         scene_graph_id=request.image_id,
-        target_id=request.target_id,
+        target_id=primary_target.id,
         prompt=request.prompt,
         action_type=response.action.action,
         target_material=response.action.material
     )
     db.add(history_rec)
 
-    if response.updated_object:
-        for idx, obj in enumerate(scene_graph.objects):
-            if obj.id == request.target_id:
-                scene_graph.objects[idx] = response.updated_object
-                break
+    if response.updated_object or new_img_url:
+        if new_img_url:
+            scene_graph.image_url = new_img_url
+        if response.updated_object:
+            for idx, obj in enumerate(scene_graph.objects):
+                if obj.id in target_ids or obj.id == primary_target.id:
+                    scene_graph.objects[idx] = response.updated_object
         scene_graph.version += 1
         save_scene_graph_to_db(db, scene_graph)
 
     return response
+
+
+# ─── Prompt Generation & Frame Generation Endpoints ───────────────────────────
+
+@app.post("/generate-prompt", response_model=PromptGenerationResponse)
+@app.post("/api/v1/generate-prompt", response_model=PromptGenerationResponse)
+async def generate_prompt_endpoint(request: PromptGenerationRequest):
+    """
+    Prompt Generation Engine:
+    Synthesizes production-grade 8K diffusion prompts from user design concepts,
+    incorporating architectural styles, materials, and lighting setups.
+    """
+    return generative_engine.generate_prompt(request)
+
+
+@app.post("/generate-frame", response_model=FrameGenerationResponse)
+@app.post("/api/v1/generate-frame", response_model=FrameGenerationResponse)
+def generate_frame_endpoint(request: FrameGenerationRequest):
+    """
+    Frame Generation Engine:
+    Synthesizes multi-keyframe visual concept variations for interior spaces based on prompts.
+    """
+    return generative_engine.generate_frames(request)
+

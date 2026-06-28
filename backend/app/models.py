@@ -21,15 +21,17 @@ SegmentationData = MaskSegmentation
 class SceneObject(BaseModel):
     id: str = Field(..., description="Unique object ID")
     object_class: str = Field(..., alias="class", description="Architectural class following normalized taxonomy")
+    layer: str = Field("furniture", description="Scene Layer classification (structural, furniture, decor, background)")
     polygon: List[Point] = Field(..., description="High-precision segmentation polygon vertices")
     segmentation: Optional[MaskSegmentation] = Field(None, description="Precise region mask or polygon shape points [[x1,y1], [x2,y2], ...]")
-    bbox: Optional[List[int]] = Field(None, description="Optional bounding box for fallback [x1, y1, x2, y2]")
+    mask: Optional[MaskSegmentation] = Field(None, description="Exact mask object matching required schema")
+    bbox: Optional[List[int]] = Field(None, description="Optional bounding box for reference only [x1, y1, x2, y2]")
     depth: float = Field(..., description="Estimated depth distance in meters")
     material: str = Field(..., description="Detailed surface material classification")
     style: Optional[str] = Field("modern", description="Architectural style motif")
     editable: bool = Field(True, description="Generative edit permission flag")
     confidence: float = Field(..., ge=0.0, le=1.0, description="Detection confidence score")
-    parent: Optional[str] = Field(None, description="Hierarchy parent tagging (e.g. building, facade)")
+    parent: Optional[str] = Field(None, description="Hierarchy parent tagging (e.g. building, room_structure)")
     
     # Detailed Physical & Architectural Attributes
     surface_orientation: Optional[str] = Field("Vertical Facade", description="Geometric surface orientation")
@@ -84,9 +86,12 @@ class SegmentSceneResponse(BaseModel):
 
 class InteriorObjectInstance(BaseModel):
     id: str = Field(..., description="Unique instance identifier")
-    label: str = Field(..., alias="class", description="Identified interior category (sofa, chair, lamp, rug, table, etc.)")
-    segmentation: MaskSegmentation = Field(..., description="Pixel-level exact visual mask")
+    object_class: str = Field(..., alias="class", description="Identified interior category (sofa, chair, lamp, rug, table, etc.)")
+    layer: str = Field("furniture", description="Layer categorization (structural, furniture, decor, background)")
+    mask: MaskSegmentation = Field(..., description="Pixel-level exact visual mask")
+    segmentation: Optional[MaskSegmentation] = Field(None, description="Backward compatibility segmentation field")
     confidence: float = Field(..., ge=0.0, le=1.0, description="Inference confidence score")
+    editable: bool = Field(True, description="Generative edit permission flag")
 
     class Config:
         populate_by_name = True
@@ -98,9 +103,18 @@ class InteriorSegmentationResponse(BaseModel):
     objects: List[InteriorObjectInstance]
     processing_time_ms: float
 
+class StructuredActionItem(BaseModel):
+    target: str = Field(..., description="Target object instance ID")
+    action: str = Field(..., description="Action type (replace_material, remove, recolor, modify_style)")
+    value: Optional[str] = Field(None, description="Target value or material instruction")
+
+class StructuredPromptInstruction(BaseModel):
+    actions: List[StructuredActionItem] = Field(default_factory=list)
+
 class OrchestratorRequest(BaseModel):
     image_id: str
-    target_id: str
+    target_id: Optional[str] = Field(None, description="Single target object ID")
+    target_ids: Optional[List[str]] = Field(default_factory=list, description="Multi-selection target object IDs")
     prompt: str
 
 class OrchestratedAction(BaseModel):
@@ -114,4 +128,47 @@ class OrchestratorResponse(BaseModel):
     status: str = "success"
     action: OrchestratedAction
     updated_object: Optional[SceneObject] = None
+    updated_image_url: Optional[str] = None
     message: str
+
+# ─── Prompt & Frame Generation Models ─────────────────────────────────────────
+
+class PromptGenerationRequest(BaseModel):
+    concept: str = Field(..., description="User design concept or style direction (e.g., 'Modern Japandi living room')")
+    target_objects: Optional[List[str]] = Field(default_factory=list, description="Target object categories to highlight (e.g., ['sofa', 'lamp', 'table'])")
+    style_preset: Optional[str] = Field("minimalist_luxury", description="Style preset (japandi, scandinavian, industrial, biophilic, brutalist)")
+    lighting_mood: Optional[str] = Field("warm_golden_hour", description="Lighting mood (warm_golden_hour, cinematic_dramatic, soft_diffused_daylight)")
+
+class GeneratedPromptData(BaseModel):
+    positive_prompt: str = Field(..., description="Optimized high-detail diffusion/render prompt")
+    negative_prompt: str = Field(..., description="Standard negative prompt for artifact suppression")
+    architectural_style: str
+    material_palette: List[str]
+    lighting_setup: str
+
+class PromptGenerationResponse(BaseModel):
+    prompt_id: str
+    concept: str
+    generated_prompt: GeneratedPromptData
+    processing_time_ms: float
+
+class FrameGenerationRequest(BaseModel):
+    image_id: Optional[str] = Field("default", description="Base scene image identifier")
+    prompt: str = Field(..., description="Generative render prompt or concept instruction")
+    num_frames: int = Field(4, ge=1, le=8, description="Number of variation keyframes to generate")
+    aspect_ratio: str = Field("16:9", description="Target frame aspect ratio")
+    overlay_masks: bool = Field(True, description="Whether to bake object segmentation mask outlines into frame previews")
+
+class FrameItem(BaseModel):
+    frame_id: str
+    frame_number: int
+    frame_url: str
+    style_variant: str
+    prompt_used: str
+
+class FrameGenerationResponse(BaseModel):
+    job_id: str
+    base_image_id: str
+    frames: List[FrameItem]
+    processing_time_ms: float
+

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
-import { SceneGraph, OrchestratorResponse } from "@/types/scene";
+import { SceneGraph, SceneObject, OrchestratorResponse } from "@/types/scene";
 import LayersSidebar from "@/components/LayersSidebar";
 import Inspector from "@/components/Inspector";
 import { Sparkles, Upload, RefreshCw, Cpu, CheckCircle2, Scan, Loader2, Home, Palette, Sliders, Layers, ArrowRight, X } from "lucide-react";
@@ -163,6 +163,18 @@ export default function StudioPage() {
     }
   };
 
+  const handleClassUpdated = (updatedObj: SceneObject) => {
+    showToast(`Updated class to '${updatedObj.class}'. Model learned new taxonomy!`, "Active Learning", "success");
+    setSceneGraph((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        version: prev.version + 1,
+        objects: prev.objects.map((obj) => (obj.id === updatedObj.id ? updatedObj : obj))
+      };
+    });
+  };
+
   const selectedObject = sceneGraph?.objects.find((obj) => obj.id === selectedObjectId) || null;
 
   return (
@@ -290,6 +302,7 @@ export default function StudioPage() {
           selectedObject={selectedObject}
           imageId={imageId}
           onOrchestratorSuccess={handleOrchestratorSuccess}
+          onClassUpdated={handleClassUpdated}
           onOrchestrateStart={() => setIsOrchestrating(true)}
           onOrchestrateEnd={() => setIsOrchestrating(false)}
           width={rightWidth}

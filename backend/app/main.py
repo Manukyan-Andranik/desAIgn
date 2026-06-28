@@ -12,7 +12,7 @@ from app.database import engine, Base, get_db
 from app import db_models
 from app.models import (
     SceneGraph, SceneObject, SceneRelationship, Point, NormalVector, MaskSegmentation, SegmentationData,
-    OrchestratorRequest, OrchestratorResponse,
+    OrchestratorRequest, OrchestratorResponse, UpdateObjectClassRequest,
     DetectionRequest, DetectionResponse, DetectedObjectItem,
     SegmentSceneResponse, SegmentSceneItem,
     InteriorSegmentationResponse, InteriorObjectInstance,
@@ -24,6 +24,7 @@ from app.detector import object_detector
 from app.interior_detector import interior_pipeline
 from app.orchestrator import execute_orchestration
 from app.generative import generative_engine
+from app.learning_engine import save_user_correction
 
 # Initialize DB tables from models
 db_models.Base.metadata.create_all(bind=engine)
@@ -334,6 +335,25 @@ async def analyze_render(
 @app.get("/api/v1/scene-graph/{image_id}", response_model=SceneGraph)
 def get_scene_graph(image_id: str, db: Session = Depends(get_db)):
     return load_scene_graph_from_db(db, image_id)
+
+@app.post("/api/v1/object/update-class")
+def update_object_class(req: UpdateObjectClassRequest, db: Session = Depends(get_db)):
+    scene_graph = load_scene_graph_from_db(db, req.image_id)
+    target_obj = next((o for o in scene_graph.objects if o.id == req.object_id), None)
+    if not target_obj:
+        raise HTTPException(status_code=404, detail="Object not found in scene graph")
+    
+    orig_class = target_obj.object_class
+    target_obj.object_class = req.new_class.strip().lower()
+    scene_graph.version += 1
+    
+    # Persist updated scene graph in database
+    save_scene_graph_to_db(db, scene_graph)
+    
+    # Save user correction to active learning engine memory
+    save_user_correction(orig_class, req.new_class)
+    
+    return {"status": "success", "message": f"Updated class '{orig_class}' to '{req.new_class}'. Model learned new taxonomy.", "updated_object": target_obj}
 
 @app.post("/api/v1/orchestrate", response_model=OrchestratorResponse)
 async def orchestrate_prompt(request: OrchestratorRequest, db: Session = Depends(get_db)):

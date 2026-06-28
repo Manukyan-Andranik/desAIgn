@@ -27,6 +27,7 @@ from app.sam_segmentor import sam_segmentor
 from app.depth_estimator import depth_estimator
 from app.scene_graph_generator import sgg_engine
 from app.clip_classifier import clip_classifier
+from app.learning_engine import learning_engine
 
 # ─── Legacy Fallback Import ──────────────────────────────────────────────────
 from app.interior_detector import interior_pipeline, EXPLICIT_TAXONOMY_MAP, BACKGROUND_STRUCTURAL_MAP
@@ -172,7 +173,8 @@ class AntigravityVisionPipeline:
         # ─── Stage 5: Scene Graph Assembly ─────
         scene_objects: List[SceneObject] = []
         for det in detections:
-            cls = det["class"]
+            raw_cls = det["class"]
+            cls = learning_engine.get_corrected_class(raw_cls)
             polygon_points = det.get("polygon", [])
             pts = [Point(x=p[0], y=p[1]) for p in polygon_points]
 

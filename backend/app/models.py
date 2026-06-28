@@ -44,6 +44,11 @@ class SceneObject(BaseModel):
     class Config:
         populate_by_name = True
 
+class UpdateObjectClassRequest(BaseModel):
+    image_id: str = Field(..., description="Scene graph image ID")
+    object_id: str = Field(..., description="Target object ID to update")
+    new_class: str = Field(..., description="New object class/name specified by user")
+
 class SceneRelationship(BaseModel):
     subject_id: str = Field(..., description="Subject object ID")
     predicate: str = Field(..., description="Spatial or structural relation (on, next_to, mounted_on, beside, under, above)")

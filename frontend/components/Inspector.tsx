@@ -1,21 +1,42 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { SceneObject, OrchestratorResponse } from "@/types/scene";
-import { Sparkles, Layers, ShieldCheck, Cpu, ArrowRight, Wand2 } from "lucide-react";
+import { Sparkles, Layers, ArrowRight, Wand2, Edit3, Check, X, Brain } from "lucide-react";
 
 interface InspectorProps {
   selectedObject: SceneObject | null;
   imageId: string;
   onOrchestratorSuccess: (response: OrchestratorResponse) => void;
+  onClassUpdated?: (updatedObject: SceneObject) => void;
   onOrchestrateStart?: (prompt: string) => void;
   onOrchestrateEnd?: () => void;
   width?: number;
 }
 
-export default function Inspector({ selectedObject, imageId, onOrchestratorSuccess, onOrchestrateStart, onOrchestrateEnd, width = 280 }: InspectorProps) {
+export default function Inspector({
+  selectedObject,
+  imageId,
+  onOrchestratorSuccess,
+  onClassUpdated,
+  onOrchestrateStart,
+  onOrchestrateEnd,
+  width = 280
+}: InspectorProps) {
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // Active Learning Class Edit State
+  const [isEditingClass, setIsEditingClass] = useState(false);
+  const [newClassName, setNewClassName] = useState("");
+  const [isSavingClass, setIsSavingClass] = useState(false);
+
+  useEffect(() => {
+    if (selectedObject) {
+      setNewClassName(selectedObject.class);
+      setIsEditingClass(false);
+    }
+  }, [selectedObject?.id, selectedObject?.class]);
 
   if (!selectedObject) {
     return (
@@ -25,11 +46,43 @@ export default function Inspector({ selectedObject, imageId, onOrchestratorSucce
         </div>
         <h3 className="text-xs font-semibold text-slate-300">No Element Selected</h3>
         <p className="text-[11px] text-slate-500 mt-1.5 max-w-[180px]">
-          Select an object on the canvas to inspect surface parameters and orchestrate edits.
+          Select an object on the canvas to inspect surface parameters, train object classes, or orchestrate edits.
         </p>
       </aside>
     );
   }
+
+  const handleSaveClass = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newClassName.trim() || newClassName.trim().toLowerCase() === selectedObject.class) {
+      setIsEditingClass(false);
+      return;
+    }
+
+    setIsSavingClass(true);
+    try {
+      const res = await fetch("http://localhost:8000/api/v1/object/update-class", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          image_id: imageId,
+          object_id: selectedObject.id,
+          new_class: newClassName.trim()
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setIsEditingClass(false);
+        if (onClassUpdated && data.updated_object) {
+          onClassUpdated(data.updated_object);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to update object class:", err);
+    } finally {
+      setIsSavingClass(false);
+    }
+  };
 
   const handleOrchestrateWithText = async (textToUse: string) => {
     if (!textToUse.trim()) return;
@@ -72,27 +125,72 @@ export default function Inspector({ selectedObject, imageId, onOrchestratorSucce
   return (
     <aside style={{ width }} className="h-full bg-[#0c0e14]/90 border-l border-slate-800/80 p-4.5 flex flex-col justify-between overflow-y-auto select-none backdrop-blur-md shrink-0 transition-none">
       <div className="space-y-4">
-        {/* Header */}
+        {/* Interactive Object Class Header with Active Learning Controls */}
         <div>
           <div className="flex items-center justify-between">
-            <span className="text-[10px] font-mono uppercase tracking-wider text-cyan-400 bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-800/50 font-medium">
-              {selectedObject.class}
-            </span>
-            <span className="text-[10px] font-mono text-slate-500">
+            {isEditingClass ? (
+              <form onSubmit={handleSaveClass} className="flex items-center space-x-1.5 flex-1 mr-2">
+                <input
+                  type="text"
+                  value={newClassName}
+                  onChange={(e) => setNewClassName(e.target.value)}
+                  className="bg-slate-900 border border-cyan-500 rounded px-2 py-0.5 text-xs text-cyan-300 font-mono focus:outline-none w-full"
+                  autoFocus
+                />
+                <button
+                  type="submit"
+                  disabled={isSavingClass}
+                  className="p-1 text-emerald-400 hover:bg-slate-800 rounded"
+                  title="Save & Train Class"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsEditingClass(false)}
+                  className="p-1 text-slate-400 hover:bg-slate-800 rounded"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </form>
+            ) : (
+              <div className="flex items-center space-x-1.5 group">
+                <span className="text-[10px] font-mono uppercase tracking-wider text-cyan-400 bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-800/50 font-medium">
+                  {selectedObject.class}
+                </span>
+                <button
+                  onClick={() => {
+                    setNewClassName(selectedObject.class);
+                    setIsEditingClass(true);
+                  }}
+                  className="p-1 text-slate-500 hover:text-cyan-300 transition-colors rounded hover:bg-slate-800/60"
+                  title="Edit class name (Model learns from your feedback)"
+                >
+                  <Edit3 className="w-3 h-3" />
+                </button>
+              </div>
+            )}
+
+            <span className="text-[10px] font-mono text-slate-500 shrink-0">
               {selectedObject.id}
             </span>
           </div>
 
-          <div className="flex items-center space-x-2.5 mt-2.5">
-            {selectedObject.color_hex && (
-              <div
-                className="w-4 h-4 rounded-full border border-white/20 shrink-0"
-                style={{ backgroundColor: selectedObject.color_hex }}
-              />
-            )}
-            <h2 className="text-xs font-semibold text-slate-100 truncate">
-              {selectedObject.material}
-            </h2>
+          <div className="flex items-center justify-between mt-2.5">
+            <div className="flex items-center space-x-2.5 truncate">
+              {selectedObject.color_hex && (
+                <div
+                  className="w-4 h-4 rounded-full border border-white/20 shrink-0"
+                  style={{ backgroundColor: selectedObject.color_hex }}
+                />
+              )}
+              <h2 className="text-xs font-semibold text-slate-100 truncate">
+                {selectedObject.material}
+              </h2>
+            </div>
+            <div className="flex items-center text-[10px] text-slate-500 font-mono" title="Active Learning Engine Sync">
+              <Brain className="w-3 h-3 text-cyan-400 mr-1" /> Learned
+            </div>
           </div>
         </div>
 

@@ -10,7 +10,7 @@ import ProjectsPage from "@/components/ProjectsPage";
 import AuthModal from "@/components/AuthModal";
 import ProgressLoader from "@/components/ProgressLoader";
 import UserAccountMenu from "@/components/UserAccountMenu";
-import { Sparkles, Upload, RefreshCw, Cpu, CheckCircle2, Scan, Loader2, Home, Palette, Sliders, Layers, ArrowRight, X, LayoutDashboard, Plus, Trash2, Folder, Undo2, Redo2 } from "lucide-react";
+import { Sparkles, Upload, RefreshCw, Cpu, CheckCircle2, Scan, Loader2, Home, Palette, Sliders, Layers, ArrowRight, X, LayoutDashboard, Plus, Trash2, Folder, Undo2, Redo2, ShieldAlert, LogIn, Lock } from "lucide-react";
 
 const InteractiveCanvas = dynamic(() => import("@/components/InteractiveCanvas"), {
   ssr: false,
@@ -278,10 +278,22 @@ export default function StudioPage() {
       const res = await fetch(`http://localhost:8000/api/v1/projects/${projectId}`, { method: "DELETE" });
       if (res.ok && activeUser) {
         fetchUserProjects(activeUser.id);
-        showToast("Deleted project from workspace.", "Project OS", "info");
+        showToast("Deleted project from control panel.", "Projects OS", "info");
       }
     } catch (err) {
       console.error("Failed to delete project:", err);
+    }
+  };
+
+  const handleDuplicateProject = async (projectId: string) => {
+    try {
+      const res = await fetch(`http://localhost:8000/api/v1/projects/${projectId}/duplicate`, { method: "POST" });
+      if (res.ok && activeUser) {
+        fetchUserProjects(activeUser.id);
+        showToast("Duplicated project in control panel.", "Projects OS", "success");
+      }
+    } catch (err) {
+      console.error("Failed to duplicate project:", err);
     }
   };
 
@@ -670,6 +682,26 @@ export default function StudioPage() {
           selectedDesignStyle={designStyle}
           onOpenSetupModal={() => setShowSetupModal(true)}
         />
+      ) : !activeUser ? (
+        <div className="flex-1 flex flex-col items-center justify-center p-8 bg-[#07080c] text-center relative select-none font-sans overflow-hidden">
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[300px] bg-cyan-600/10 blur-[130px] rounded-full pointer-events-none" />
+          <div className="w-16 h-16 rounded-3xl bg-cyan-950 border border-cyan-500/60 flex items-center justify-center text-cyan-400 mb-5 shadow-2xl shadow-cyan-500/25 z-10">
+            <Lock className="w-8 h-8 animate-pulse text-cyan-400" />
+          </div>
+          <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-100 uppercase tracking-tight z-10">
+            Workspace Inactive
+          </h2>
+          <p className="text-xs sm:text-sm text-slate-400 max-w-md mt-2.5 leading-relaxed font-sans z-10">
+            An authenticated studio account is required to activate spatial 3D rendering, scene graphs, and the projects control panel.
+          </p>
+          <button
+            onClick={() => setShowAuthModal(true)}
+            className="mt-6 px-6 py-3 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-extrabold rounded-2xl text-xs shadow-xl shadow-cyan-500/30 flex items-center space-x-2 transition-all active:scale-95 z-10"
+          >
+            <LogIn className="w-4 h-4" />
+            <span>Sign In or Register to Unlock</span>
+          </button>
+        </div>
       ) : viewMode === "projects" ? (
         <ProjectsPage
           activeUser={activeUser}
@@ -677,6 +709,7 @@ export default function StudioPage() {
           onUploadClick={() => fileInputRef.current?.click()}
           onSelectProject={handleSelectProject}
           onDeleteProject={handleDeleteProject}
+          onDuplicateProject={handleDuplicateProject}
           onOpenAuthModal={() => setShowAuthModal(true)}
         />
       ) : (

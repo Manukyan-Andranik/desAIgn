@@ -450,6 +450,39 @@ def delete_project(project_id: str, db: Session = Depends(get_db)):
     db.commit()
     return {"status": "success", "message": f"Deleted project '{project_id}'"}
 
+@app.post("/api/v1/projects/{project_id}/duplicate", response_model=ProjectSchema)
+def duplicate_project(project_id: str, db: Session = Depends(get_db)):
+    p = db.query(db_models.ProjectRecord).filter(db_models.ProjectRecord.id == project_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    new_proj_id = f"proj_{uuid.uuid4().hex[:8]}"
+    dup_p = db_models.ProjectRecord(
+        id=new_proj_id,
+        user_id=p.user_id,
+        title=f"{p.title} (Copy)",
+        image_id=p.image_id,
+        room_type=p.room_type,
+        design_style=p.design_style
+    )
+    db.add(dup_p)
+    db.commit()
+    
+    sg = db.query(db_models.SceneGraphRecord).filter(db_models.SceneGraphRecord.id == p.image_id).first()
+    img_url = sg.image_url if sg else None
+    obj_count = len(sg.objects) if sg and sg.objects else 0
+    
+    return ProjectSchema(
+        id=dup_p.id,
+        user_id=dup_p.user_id,
+        title=dup_p.title,
+        image_id=dup_p.image_id,
+        room_type=dup_p.room_type,
+        design_style=dup_p.design_style,
+        image_url=img_url,
+        object_count=obj_count
+    )
+
 @app.post("/api/v1/analyze", response_model=SceneGraph)
 async def analyze_render(
     file: UploadFile = File(None),

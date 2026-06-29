@@ -231,3 +231,10 @@ class FrameGenerationResponse(BaseModel):
     frames: List[FrameItem]
     processing_time_ms: float
 
+class RegionAIEditRequest(BaseModel):
+    image_id: str = Field(..., description="Scene graph image ID")
+    bbox: List[float] = Field(..., description="Bounding box [xmin, ymin, xmax, ymax]")
+    object_name: str = Field(..., description="Selected object name")
+    prompt: str = Field(..., description="Generative user edit prompt for Gemini model")
+    points: Optional[List[List[float]]] = Field(default_factory=list, description="Polygon stroke or rectangle points")
+

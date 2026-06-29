@@ -12,13 +12,13 @@ from app.database import engine, Base, get_db
 from app import db_models
 from app.models import (
     SceneGraph, SceneObject, SceneRelationship, Point, NormalVector, MaskSegmentation, SegmentationData,
-    OrchestratorRequest, OrchestratorResponse, UpdateObjectClassRequest, MergeObjectsRequest, AddCustomObjectRequest,
+    OrchestratorRequest, OrchestratorResponse, OrchestratedAction, UpdateObjectClassRequest, MergeObjectsRequest, AddCustomObjectRequest,
     UserSchema, ProjectSchema, CreateProjectRequest, LoginRequest, RegisterRequest,
     DetectionRequest, DetectionResponse, DetectedObjectItem,
     SegmentSceneResponse, SegmentSceneItem,
     InteriorSegmentationResponse, InteriorObjectInstance,
     PromptGenerationRequest, PromptGenerationResponse,
-    FrameGenerationRequest, FrameGenerationResponse
+    FrameGenerationRequest, FrameGenerationResponse, RegionAIEditRequest
 )
 from app.vision import process_uploaded_image, generate_mock_scene_graph
 from app.detector import object_detector
@@ -30,15 +30,7 @@ from app.learning_engine import save_user_correction
 # Initialize DB tables from models
 db_models.Base.metadata.create_all(bind=engine)
 
-app = FastAPI(
-    title="Antigravity Vision & Detection API - Architectural & Interior Scene OS",
-    description="Backend service with Region Mask Segmentation, Interior Furniture Extraction, DB persistence, and generative orchestration.",
-    version="2.5.0"
-)
-
-@app.on_event("startup")
-def on_startup():
-    db_models.Base.metadata.create_all(bind=engine)
+def run_db_migrations():
     try:
         from sqlalchemy import inspect, text
         inspector = inspect(engine)
@@ -48,8 +40,26 @@ def on_startup():
                 with engine.connect() as conn:
                     conn.execute(text("ALTER TABLE scene_graphs ADD COLUMN relationships JSON"))
                     conn.commit()
+        if "users" in inspector.get_table_names():
+            user_columns = [c["name"] for c in inspector.get_columns("users")]
+            if "password_hash" not in user_columns:
+                with engine.connect() as conn:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN password_hash VARCHAR"))
+                    conn.commit()
     except Exception as e:
         print(f"[DB Migration Warning] {e}")
+
+run_db_migrations()
+
+app = FastAPI(
+    title="Antigravity Vision & Detection API - Architectural & Interior Scene OS",
+    description="Backend service with Region Mask Segmentation, Interior Furniture Extraction, DB persistence, and generative orchestration.",
+    version="2.5.0"
+)
+
+@app.on_event("startup")
+def on_startup():
+    run_db_migrations()
 
 app.add_middleware(
     CORSMiddleware,
@@ -643,6 +653,64 @@ def add_custom_object(req: AddCustomObjectRequest, db: Session = Depends(get_db)
         "status": "success",
         "message": f"Added custom object '{clean_class}' to scene graph.",
         "new_object": new_obj
+    }
+
+@app.post("/api/v1/object/ai-edit")
+async def ai_edit_region(req: RegionAIEditRequest, db: Session = Depends(get_db)):
+    scene_graph = load_scene_graph_from_db(db, req.image_id)
+    clean_name = req.object_name.strip().lower()
+    
+    if not clean_name:
+        raise HTTPException(status_code=400, detail="Object name cannot be empty.")
+    if not req.prompt.strip():
+        raise HTTPException(status_code=400, detail="AI edit prompt cannot be empty.")
+        
+    custom_id = f"{req.image_id}_ai_{uuid.uuid4().hex[:6]}"
+    xmin, ymin, xmax, ymax = int(req.bbox[0]), int(req.bbox[1]), int(req.bbox[2]), int(req.bbox[3])
+    
+    pts_coords = req.points if (req.points and len(req.points) >= 3) else [
+        [float(xmin), float(ymin)],
+        [float(xmax), float(ymin)],
+        [float(xmax), float(ymax)],
+        [float(xmin), float(ymax)]
+    ]
+    polygon_points = [Point(x=p[0], y=p[1]) for p in pts_coords]
+    
+    new_obj = SceneObject(
+        id=custom_id,
+        **{"class": clean_name},
+        layer="furniture",
+        polygon=polygon_points,
+        segmentation=MaskSegmentation(type="polygon", points=pts_coords),
+        bbox=[xmin, ymin, xmax, ymax],
+        depth=2.5,
+        material=req.prompt.strip(),
+        confidence=1.0,
+        editable=True
+    )
+    scene_graph.objects.append(new_obj)
+    scene_graph.version += 1
+    
+    mock_action = OrchestratedAction(targets=[new_obj.id], action="modify_style", material=req.prompt.strip())
+    gen_result = await generative_engine.generate_inpaint(
+        image_path=scene_graph.image_url or "default",
+        target_object=new_obj,
+        action=mock_action,
+        user_prompt=req.prompt.strip()
+    )
+    
+    new_img_url = gen_result.get("generated_image_url")
+    if new_img_url:
+        scene_graph.image_url = new_img_url
+        
+    save_scene_graph_to_db(db, scene_graph)
+    save_user_correction(clean_name, clean_name)
+    
+    return {
+        "status": "success",
+        "message": f"Applied AI transformation to '{clean_name}' with prompt: '{req.prompt}'.",
+        "new_object": new_obj,
+        "updated_image_url": new_img_url
     }
 
 @app.post("/api/v1/orchestrate", response_model=OrchestratorResponse)

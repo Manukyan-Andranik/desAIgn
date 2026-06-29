@@ -402,6 +402,37 @@ export default function StudioPage() {
     }
   };
 
+  const handleAIEditRegion = async (bbox: number[], objectName: string, prompt: string, points: number[][]) => {
+    if (!imageId || !objectName.trim() || !prompt.trim()) return;
+    setIsOrchestrating(true);
+    try {
+      const res = await fetch("http://localhost:8000/api/v1/object/ai-edit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          image_id: imageId,
+          bbox: bbox,
+          object_name: objectName.trim(),
+          prompt: prompt.trim(),
+          points: points
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        fetchSceneGraph(imageId);
+        if (data.new_object) {
+          setSelectedObjectId(data.new_object.id);
+          setSelectedObjectIds([data.new_object.id]);
+        }
+        showToast(data.message || `Applied AI region edit for '${objectName}'.`, "Gemini AI Engine", "success");
+      }
+    } catch (err) {
+      console.error("Failed to execute AI region edit:", err);
+    } finally {
+      setIsOrchestrating(false);
+    }
+  };
+
   const selectedObject = sceneGraph?.objects.find((obj) => obj.id === selectedObjectId) || null;
 
   return (
@@ -603,6 +634,7 @@ export default function StudioPage() {
               onSelectObject={(id, isMulti = false) => handleToggleSelectObject(id, isMulti)}
               onHoverObject={(id) => setHoveredObjectId(id)}
               onAddCustomObject={handleAddCustomObject}
+              onAIEditRegion={handleAIEditRegion}
             />
           </main>
 

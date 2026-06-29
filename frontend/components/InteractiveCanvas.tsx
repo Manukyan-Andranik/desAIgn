@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Stage, Layer, Image as KonvaImage, Line, Rect, Text, Group, Arrow } from "react-konva";
 import useImage from "use-image";
 import { SceneGraph } from "@/types/scene";
-import { ZoomIn, ZoomOut, Maximize2, Move, Paintbrush, MousePointer, Check, X, Sparkles } from "lucide-react";
+import { ZoomIn, ZoomOut, Maximize2, Move, Paintbrush, MousePointer, Check, X, Sparkles, Square, Wand2, ArrowRight, Layers } from "lucide-react";
 
 interface InteractiveCanvasProps {
   sceneGraph: SceneGraph | null;
@@ -15,6 +15,7 @@ interface InteractiveCanvasProps {
   onSelectObject: (id: string | null, isMulti?: boolean) => void;
   onHoverObject: (id: string | null) => void;
   onAddCustomObject?: (className: string, points: number[][]) => void;
+  onAIEditRegion?: (bbox: number[], objectName: string, prompt: string, points: number[][]) => Promise<void>;
 }
 
 const DEFAULT_IMAGE_URL = "/default.jpg";
@@ -27,7 +28,8 @@ export default function InteractiveCanvas({
   showBBoxes = false,
   onSelectObject,
   onHoverObject,
-  onAddCustomObject
+  onAddCustomObject,
+  onAIEditRegion
 }: InteractiveCanvasProps) {
   const activeImageUrl = sceneGraph?.image_url || DEFAULT_IMAGE_URL;
   const [image] = useImage(activeImageUrl, "anonymous");
@@ -38,15 +40,21 @@ export default function InteractiveCanvas({
   const [stagePos, setStagePos] = useState({ x: 0, y: 0 });
   const stageRef = useRef<any>(null);
 
-  // Brush Tool State
-  const [activeTool, setActiveTool] = useState<"select" | "brush">("select");
+  // Active Tool Mode: Pointer Select vs Brush Draw vs Rectangle Box
+  const [activeTool, setActiveTool] = useState<"select" | "brush" | "rectangle">("select");
   const [isDrawing, setIsDrawing] = useState(false);
   const [strokePoints, setStrokePoints] = useState<number[][]>([]);
   
-  // Save Custom Object Naming Modal State
-  const [showNamingModal, setShowNamingModal] = useState(false);
+  // Rectangle Selection State
+  const [rectStartPos, setRectStartPos] = useState<[number, number] | null>(null);
+  const [rectCurrentPos, setRectCurrentPos] = useState<[number, number] | null>(null);
+
+  // Modal State for Action Choice (Define Object vs Call Gemini AI)
+  const [showSelectionModal, setShowSelectionModal] = useState(false);
+  const [actionTab, setActionTab] = useState<"define" | "ai">("define");
   const [customClassName, setCustomClassName] = useState("");
-  const [isSavingCustom, setIsSavingCustom] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     const updateDimensions = () => {
@@ -104,7 +112,7 @@ export default function InteractiveCanvas({
   };
 
   // Convert Pointer Screen Coordinates to Raw Image Coordinates
-  const getRawImagePointerPos = () => {
+  const getRawImagePointerPos = (): [number, number] | null => {
     const stage = stageRef.current;
     if (!stage || !sceneGraph) return null;
     const pointer = stage.getPointerPosition();
@@ -128,63 +136,127 @@ export default function InteractiveCanvas({
       return;
     }
 
+    if (activeTool === "rectangle") {
+      const pos = getRawImagePointerPos();
+      if (pos) {
+        setIsDrawing(true);
+        setRectStartPos(pos);
+        setRectCurrentPos(pos);
+      }
+      return;
+    }
+
     if (e.target === e.target.getStage()) {
       onSelectObject(null);
     }
   };
 
   const handleMouseMove = () => {
-    if (activeTool === "brush" && isDrawing) {
-      const pos = getRawImagePointerPos();
-      if (pos) {
-        setStrokePoints((prev) => [...prev, pos]);
-      }
+    if (!isDrawing) return;
+    const pos = getRawImagePointerPos();
+    if (!pos) return;
+
+    if (activeTool === "brush") {
+      setStrokePoints((prev) => [...prev, pos]);
+    } else if (activeTool === "rectangle") {
+      setRectCurrentPos(pos);
     }
   };
 
   const handleMouseUp = () => {
-    if (activeTool === "brush" && isDrawing) {
-      setIsDrawing(false);
-      if (strokePoints.length >= 3) {
-        setShowNamingModal(true);
+    if (!isDrawing) return;
+    setIsDrawing(false);
+
+    if (activeTool === "brush" && strokePoints.length >= 3) {
+      setShowSelectionModal(true);
+    } else if (activeTool === "rectangle" && rectStartPos && rectCurrentPos) {
+      const dx = Math.abs(rectCurrentPos[0] - rectStartPos[0]);
+      const dy = Math.abs(rectCurrentPos[1] - rectStartPos[1]);
+      if (dx >= 10 && dy >= 10) {
+        setShowSelectionModal(true);
+      } else {
+        setRectStartPos(null);
+        setRectCurrentPos(null);
       }
     }
   };
 
-  const handleSaveCustomObjectSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!customClassName.trim() || strokePoints.length < 3 || !onAddCustomObject) return;
+  // Calculate current selection geometry (points & bounding box)
+  const currentSelection = useMemo(() => {
+    let pts: number[][] = [];
+    if (activeTool === "brush" && strokePoints.length >= 3) {
+      pts = strokePoints;
+    } else if (activeTool === "rectangle" && rectStartPos && rectCurrentPos) {
+      const xmin = Math.min(rectStartPos[0], rectCurrentPos[0]);
+      const xmax = Math.max(rectStartPos[0], rectCurrentPos[0]);
+      const ymin = Math.min(rectStartPos[1], rectCurrentPos[1]);
+      const ymax = Math.max(rectStartPos[1], rectCurrentPos[1]);
+      pts = [
+        [xmin, ymin],
+        [xmax, ymin],
+        [xmax, ymax],
+        [xmin, ymax]
+      ];
+    }
+    if (pts.length === 0) return null;
 
-    setIsSavingCustom(true);
-    onAddCustomObject(customClassName.trim(), strokePoints);
-    setShowNamingModal(false);
+    const xs = pts.map((p) => p[0]);
+    const ys = pts.map((p) => p[1]);
+    const xmin = Math.min(...xs);
+    const xmax = Math.max(...xs);
+    const ymin = Math.min(...ys);
+    const ymax = Math.max(...ys);
+
+    return {
+      points: pts,
+      bbox: [xmin, ymin, xmax, ymax]
+    };
+  }, [strokePoints, rectStartPos, rectCurrentPos, activeTool]);
+
+  const handleClearSelectionState = () => {
+    setShowSelectionModal(false);
     setCustomClassName("");
+    setAiPrompt("");
     setStrokePoints([]);
-    setIsSavingCustom(false);
+    setRectStartPos(null);
+    setRectCurrentPos(null);
+    setIsSubmitting(false);
+  };
+
+  const handleDefineObjectSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!customClassName.trim() || !currentSelection || !onAddCustomObject) return;
+
+    setIsSubmitting(true);
+    onAddCustomObject(customClassName.trim(), currentSelection.points);
+    handleClearSelectionState();
+  };
+
+  const handleAIEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!customClassName.trim() || !aiPrompt.trim() || !currentSelection || !onAIEditRegion) return;
+
+    setIsSubmitting(true);
+    await onAIEditRegion(currentSelection.bbox, customClassName.trim(), aiPrompt.trim(), currentSelection.points);
+    handleClearSelectionState();
   };
 
   if (!sceneGraph) return null;
 
-  // Compute spatial object centers for relationship rendering
-  const objectCenters: Record<string, { x: number; y: number }> = {};
-  sceneGraph.objects.forEach((obj) => {
-    let rawPoints: number[] = [];
-    if (obj.segmentation?.points && obj.segmentation.points.length > 0) {
-      rawPoints = obj.segmentation.points.flatMap((p) => [p[0], p[1]]);
-    } else if (obj.polygon && obj.polygon.length > 0) {
-      rawPoints = obj.polygon.flatMap((p) => [p.x, p.y]);
-    }
-    if (rawPoints.length >= 4) {
-      const cx = rawPoints.filter((_, i) => i % 2 === 0).reduce((a, b) => a + b, 0) / (rawPoints.length / 2);
-      const cy = rawPoints.filter((_, i) => i % 2 === 1).reduce((a, b) => a + b, 0) / (rawPoints.length / 2);
-      objectCenters[obj.id] = { x: cx, y: cy };
-    }
-  });
-
   const flatStrokePoints = strokePoints.flatMap((p) => [p[0], p[1]]);
 
+  // Active Rectangle bounds for stage drawing preview
+  let activeRectProps = null;
+  if (activeTool === "rectangle" && rectStartPos && rectCurrentPos) {
+    const xmin = Math.min(rectStartPos[0], rectCurrentPos[0]);
+    const xmax = Math.max(rectStartPos[0], rectCurrentPos[0]);
+    const ymin = Math.min(rectStartPos[1], rectCurrentPos[1]);
+    const ymax = Math.max(rectStartPos[1], rectCurrentPos[1]);
+    activeRectProps = { x: xmin, y: ymin, width: xmax - xmin, height: ymax - ymin };
+  }
+
   return (
-    <div id="canvas-container" className="w-full h-full relative bg-[#07080c] flex items-center justify-center overflow-hidden">
+    <div id="canvas-container" className="w-full h-full relative bg-[#07080c] flex items-center justify-center overflow-hidden font-sans">
       
       {/* Floating Canvas Controls Toolbar */}
       <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center space-x-2 p-1.5 glass-panel rounded-2xl border border-slate-700/60 shadow-2xl shadow-black/80 backdrop-blur-xl">
@@ -192,8 +264,13 @@ export default function InteractiveCanvas({
         {/* Tool Mode Toggles */}
         <div className="flex items-center space-x-1 bg-slate-950/80 p-1 rounded-xl border border-slate-800">
           <button
-            onClick={() => setActiveTool("select")}
-            className={`p-1.5 rounded-lg text-xs font-mono transition-all flex items-center space-x-1 ${
+            onClick={() => {
+              setActiveTool("select");
+              setStrokePoints([]);
+              setRectStartPos(null);
+              setRectCurrentPos(null);
+            }}
+            className={`px-3 py-1.5 rounded-lg text-xs font-mono transition-all flex items-center space-x-1.5 ${
               activeTool === "select"
                 ? "bg-cyan-500 text-black font-bold shadow-md shadow-cyan-500/20"
                 : "text-slate-400 hover:text-slate-200"
@@ -203,17 +280,38 @@ export default function InteractiveCanvas({
             <MousePointer className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Select</span>
           </button>
+
           <button
-            onClick={() => setActiveTool("brush")}
-            className={`p-1.5 rounded-lg text-xs font-mono transition-all flex items-center space-x-1 ${
+            onClick={() => {
+              setActiveTool("brush");
+              setRectStartPos(null);
+              setRectCurrentPos(null);
+            }}
+            className={`px-3 py-1.5 rounded-lg text-xs font-mono transition-all flex items-center space-x-1.5 ${
               activeTool === "brush"
                 ? "bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-bold shadow-md shadow-cyan-500/25"
                 : "text-slate-400 hover:text-slate-200"
             }`}
-            title="Brush Area Mark Mode"
+            title="Brush Freehand Area Mode"
           >
             <Paintbrush className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Brush Area</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setActiveTool("rectangle");
+              setStrokePoints([]);
+            }}
+            className={`px-3 py-1.5 rounded-lg text-xs font-mono transition-all flex items-center space-x-1.5 ${
+              activeTool === "rectangle"
+                ? "bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-bold shadow-md shadow-cyan-500/25"
+                : "text-slate-400 hover:text-slate-200"
+            }`}
+            title="Rectangle Box Area Selection Mode"
+          >
+            <Square className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Rectangle Box</span>
           </button>
         </div>
 
@@ -247,50 +345,143 @@ export default function InteractiveCanvas({
         </button>
       </div>
 
-      {/* Custom Object Naming Modal Dialog */}
-      {showNamingModal && (
-        <div className="absolute inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
-          <div className="w-full max-w-sm bg-[#0c0e14] border border-cyan-500/60 rounded-3xl p-6 shadow-2xl space-y-4 text-center">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-cyan-500/20 to-blue-600/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400 mx-auto shadow-lg">
-              <Paintbrush className="w-6 h-6 animate-pulse" />
+      {/* Dual Action Selection Modal (Define Object OR Call Gemini AI) */}
+      {showSelectionModal && currentSelection && (
+        <div className="absolute inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
+          <div className="w-full max-w-md bg-[#0c0e14] border border-cyan-500/60 rounded-3xl p-6 shadow-2xl space-y-5">
+            
+            {/* Header */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-cyan-950 border border-cyan-500/50 flex items-center justify-center text-cyan-400 shadow-lg">
+                  {activeTool === "brush" ? <Paintbrush className="w-5 h-5 animate-pulse" /> : <Square className="w-5 h-5 animate-pulse" />}
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wide">
+                    {activeTool === "brush" ? "Brush Region Selected" : "Rectangle Region Selected"}
+                  </h3>
+                  <p className="text-[11px] text-slate-400 font-mono">
+                    BBox: [{currentSelection.bbox.join(", ")}]
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={handleClearSelectionState}
+                className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800/80 rounded-xl transition-all"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
 
-            <div>
-              <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wide">Save Custom Painted Object</h3>
-              <p className="text-xs text-slate-400 mt-1 font-sans">Enter the object name to register it into active AI memory.</p>
-            </div>
-
-            <form onSubmit={handleSaveCustomObjectSubmit} className="space-y-3">
+            {/* Common Object Name Input */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center space-x-1">
+                <span>Selected Object Name / Category</span>
+                <span className="text-cyan-400">*</span>
+              </label>
               <input
                 type="text"
                 value={customClassName}
                 onChange={(e) => setCustomClassName(e.target.value)}
-                placeholder="e.g. Vintage Rug, Custom Pillow, Armchair"
-                className="w-full bg-slate-950 border border-slate-700 focus:border-cyan-500 rounded-xl px-3 py-2 text-xs text-cyan-200 placeholder-slate-500 focus:outline-none font-sans"
+                placeholder="e.g. Armchair, Vintage Lamp, Marble Coffee Table"
+                className="w-full bg-slate-950 border border-slate-700 focus:border-cyan-500 rounded-xl px-3.5 py-2 text-xs text-cyan-200 placeholder-slate-500 focus:outline-none font-sans shadow-inner"
                 autoFocus
               />
+            </div>
 
-              <div className="flex items-center space-x-2 pt-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowNamingModal(false);
-                    setStrokePoints([]);
-                  }}
-                  className="flex-1 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition-all"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSavingCustom || !customClassName.trim()}
-                  className="flex-1 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold rounded-xl text-xs flex items-center justify-center space-x-1.5 shadow-lg shadow-cyan-500/25 transition-all disabled:opacity-50"
-                >
-                  <Check className="w-3.5 h-3.5" />
-                  <span>Save Object</span>
-                </button>
-              </div>
-            </form>
+            {/* Choice Tabs */}
+            <div className="grid grid-cols-2 gap-2 bg-slate-950 p-1 rounded-2xl border border-slate-800/80">
+              <button
+                type="button"
+                onClick={() => setActionTab("define")}
+                className={`py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center space-x-1.5 ${
+                  actionTab === "define"
+                    ? "bg-slate-800 text-cyan-300 border border-slate-700 shadow-md"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                <Layers className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Save Scene Object</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActionTab("ai")}
+                className={`py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center space-x-1.5 ${
+                  actionTab === "ai"
+                    ? "bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-md shadow-cyan-500/20"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                <Wand2 className="w-3.5 h-3.5" />
+                <span>Call Gemini AI</span>
+              </button>
+            </div>
+
+            {/* Tab 1: Define Scene Object Form */}
+            {actionTab === "define" && (
+              <form onSubmit={handleDefineObjectSubmit} className="space-y-4 pt-1">
+                <p className="text-xs text-slate-400 leading-relaxed bg-slate-900/60 p-3 rounded-xl border border-slate-800/80 font-sans">
+                  Register this selected region as a persistent interactive layer in your scene graph without running AI generation.
+                </p>
+
+                <div className="flex items-center space-x-2">
+                  <button
+                    type="button"
+                    onClick={handleClearSelectionState}
+                    className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition-all"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting || !customClassName.trim()}
+                    className="flex-1 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-xl text-xs flex items-center justify-center space-x-1.5 shadow-lg shadow-cyan-600/25 transition-all disabled:opacity-50"
+                  >
+                    <Check className="w-4 h-4" />
+                    <span>Register Layer</span>
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* Tab 2: Gemini AI Direct Transformation Form */}
+            {actionTab === "ai" && (
+              <form onSubmit={handleAIEditSubmit} className="space-y-4 pt-1">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center space-x-1">
+                    <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>Gemini Generative Edit Prompt</span>
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={aiPrompt}
+                    onChange={(e) => setAiPrompt(e.target.value)}
+                    placeholder="e.g. Replace this selected object with a luxury cognac leather armchair with brushed brass legs"
+                    className="w-full bg-slate-950 border border-slate-700 focus:border-cyan-500 rounded-xl p-3 text-xs text-slate-200 placeholder-slate-500 focus:outline-none font-sans shadow-inner resize-none"
+                  />
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <button
+                    type="button"
+                    onClick={handleClearSelectionState}
+                    className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition-all"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting || !customClassName.trim() || !aiPrompt.trim()}
+                    className="flex-1 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold rounded-xl text-xs flex items-center justify-center space-x-1.5 shadow-lg shadow-cyan-500/25 transition-all disabled:opacity-50"
+                  >
+                    <Wand2 className="w-4 h-4" />
+                    <span>Generate with AI</span>
+                  </button>
+                </div>
+              </form>
+            )}
+
           </div>
         </div>
       )}
@@ -311,7 +502,7 @@ export default function InteractiveCanvas({
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
-        style={{ cursor: activeTool === "brush" ? "crosshair" : "grab" }}
+        style={{ cursor: activeTool === "select" ? "grab" : "crosshair" }}
       >
         <Layer scaleX={totalScale} scaleY={totalScale}>
           {/* Base Architectural Render Image */}
@@ -396,7 +587,7 @@ export default function InteractiveCanvas({
           })}
 
           {/* Active User Brush Stroke Preview */}
-          {flatStrokePoints.length >= 4 && (
+          {activeTool === "brush" && flatStrokePoints.length >= 4 && (
             <Line
               points={flatStrokePoints}
               stroke="#06b6d4"
@@ -407,6 +598,22 @@ export default function InteractiveCanvas({
               shadowBlur={15}
               shadowOpacity={0.9}
               closed={false}
+            />
+          )}
+
+          {/* Active User Rectangle Selection Box Preview */}
+          {activeTool === "rectangle" && activeRectProps && (
+            <Rect
+              x={activeRectProps.x}
+              y={activeRectProps.y}
+              width={activeRectProps.width}
+              height={activeRectProps.height}
+              stroke="#06b6d4"
+              strokeWidth={2.5 / totalScale}
+              dash={[8, 4]}
+              fill="rgba(6, 182, 212, 0.25)"
+              shadowColor="#06b6d4"
+              shadowBlur={10}
             />
           )}
 

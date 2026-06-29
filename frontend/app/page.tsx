@@ -55,32 +55,71 @@ export default function StudioPage() {
   const [historyStack, setHistoryStack] = useState<SceneGraph[]>([]);
   const [redoStack, setRedoStack] = useState<SceneGraph[]>([]);
 
-  const updateSceneGraphWithHistory = (newSG: SceneGraph | ((prev: SceneGraph | null) => SceneGraph | null)) => {
-    setSceneGraph((prev) => {
-      const nextSG = typeof newSG === "function" ? newSG(prev) : newSG;
-      if (prev && nextSG && JSON.stringify(prev) !== JSON.stringify(nextSG)) {
-        setHistoryStack((h) => [...h.slice(-25), JSON.parse(JSON.stringify(prev))]);
-        setRedoStack([]);
-      }
-      return nextSG;
-    });
+  const historyStackRef = useRef<SceneGraph[]>([]);
+  const redoStackRef = useRef<SceneGraph[]>([]);
+  const sceneGraphRef = useRef<SceneGraph | null>(null);
+
+  useEffect(() => {
+    historyStackRef.current = historyStack;
+  }, [historyStack]);
+
+  useEffect(() => {
+    redoStackRef.current = redoStack;
+  }, [redoStack]);
+
+  useEffect(() => {
+    sceneGraphRef.current = sceneGraph;
+  }, [sceneGraph]);
+
+  const syncSceneGraphToDB = async (sg: SceneGraph) => {
+    try {
+      await fetch("http://localhost:8000/api/v1/scene-graph/restore", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(sg)
+      });
+    } catch (err) {
+      console.error("Failed to sync restored scene graph to DB:", err);
+    }
+  };
+
+  const pushHistorySnapshot = (currentSG?: SceneGraph | null) => {
+    const targetSG = currentSG || sceneGraphRef.current;
+    if (!targetSG) return;
+    const clone = JSON.parse(JSON.stringify(targetSG));
+    setHistoryStack((prev) => [...prev.slice(-30), clone]);
+    setRedoStack([]);
   };
 
   const handleUndo = () => {
-    if (historyStack.length === 0 || !sceneGraph) return;
-    const previous = historyStack[historyStack.length - 1];
-    setHistoryStack((prev) => prev.slice(0, prev.length - 1));
-    setRedoStack((prev) => [...prev, JSON.parse(JSON.stringify(sceneGraph))]);
+    const history = historyStackRef.current;
+    const current = sceneGraphRef.current;
+    if (history.length === 0 || !current) return;
+
+    const previous = history[history.length - 1];
+    const newHistory = history.slice(0, history.length - 1);
+    const newRedo = [...redoStackRef.current, JSON.parse(JSON.stringify(current))];
+
+    setHistoryStack(newHistory);
+    setRedoStack(newRedo);
     setSceneGraph(previous);
+    syncSceneGraphToDB(previous);
     showToast("Undo (Ctrl+Z): Restored previous scene state.", "History OS", "info");
   };
 
   const handleRedo = () => {
-    if (redoStack.length === 0 || !sceneGraph) return;
-    const next = redoStack[redoStack.length - 1];
-    setRedoStack((prev) => prev.slice(0, prev.length - 1));
-    setHistoryStack((prev) => [...prev, JSON.parse(JSON.stringify(sceneGraph))]);
+    const redo = redoStackRef.current;
+    const current = sceneGraphRef.current;
+    if (redo.length === 0 || !current) return;
+
+    const next = redo[redo.length - 1];
+    const newRedo = redo.slice(0, redo.length - 1);
+    const newHistory = [...historyStackRef.current, JSON.parse(JSON.stringify(current))];
+
+    setRedoStack(newRedo);
+    setHistoryStack(newHistory);
     setSceneGraph(next);
+    syncSceneGraphToDB(next);
     showToast("Redo (Ctrl+Shift+Z): Re-applied scene state.", "History OS", "info");
   };
 
@@ -106,9 +145,9 @@ export default function StudioPage() {
         handleRedo();
       }
     };
-    window.addEventListener("keydown", handleGlobalKeyDown);
-    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
-  }, [historyStack, redoStack, sceneGraph]);
+    window.addEventListener("keydown", handleGlobalKeyDown, true);
+    return () => window.removeEventListener("keydown", handleGlobalKeyDown, true);
+  }, []);
   
   // Interactive Room Function & Style Setup State
   const [showSetupModal, setShowSetupModal] = useState<boolean>(false);
@@ -351,7 +390,8 @@ export default function StudioPage() {
     showToast(res.message, "Generative AI", "ai");
 
     if ((res.updated_object || res.updated_image_url) && sceneGraph) {
-      updateSceneGraphWithHistory((prev) => {
+      pushHistorySnapshot();
+      setSceneGraph((prev) => {
         if (!prev) return prev;
         return {
           ...prev,
@@ -367,7 +407,8 @@ export default function StudioPage() {
 
   const handleClassUpdated = (updatedObj: SceneObject) => {
     showToast(`Updated class to '${updatedObj.class}'. Model learned new taxonomy!`, "Active Learning", "success");
-    updateSceneGraphWithHistory((prev) => {
+    pushHistorySnapshot();
+    setSceneGraph((prev) => {
       if (!prev) return prev;
       return {
         ...prev,
@@ -379,6 +420,7 @@ export default function StudioPage() {
 
   const handleObjectDeleted = async (deletedId: string) => {
     try {
+      pushHistorySnapshot();
       const res = await fetch(`http://localhost:8000/api/v1/object/${imageId}/${deletedId}`, {
         method: "DELETE"
       });
@@ -388,7 +430,7 @@ export default function StudioPage() {
           setSelectedObjectId(null);
         }
         setSelectedObjectIds((prev) => prev.filter((i) => i !== deletedId));
-        updateSceneGraphWithHistory((prev) => {
+        setSceneGraph((prev) => {
           if (!prev) return prev;
           return {
             ...prev,
@@ -425,6 +467,7 @@ export default function StudioPage() {
   const handleMergeObjects = async () => {
     if (selectedObjectIds.length < 2) return;
     try {
+      pushHistorySnapshot();
       const res = await fetch("http://localhost:8000/api/v1/object/merge", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -450,6 +493,7 @@ export default function StudioPage() {
   const handleAddCustomObject = async (className: string, brushPoints: number[][]) => {
     if (!imageId || !className.trim() || brushPoints.length < 3) return;
     try {
+      pushHistorySnapshot();
       const res = await fetch("http://localhost:8000/api/v1/object/add-custom", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -477,6 +521,7 @@ export default function StudioPage() {
     if (!imageId || !objectName.trim() || !prompt.trim()) return;
     setIsOrchestrating(true);
     try {
+      pushHistorySnapshot();
       const res = await fetch("http://localhost:8000/api/v1/object/ai-edit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

@@ -509,6 +509,11 @@ async def analyze_render(
 def get_scene_graph(image_id: str, db: Session = Depends(get_db)):
     return load_scene_graph_from_db(db, image_id)
 
+@app.post("/api/v1/scene-graph/restore")
+def restore_scene_graph(sg: SceneGraph, db: Session = Depends(get_db)):
+    save_scene_graph_to_db(db, sg)
+    return {"status": "success", "message": "Restored scene graph in database."}
+
 @app.post("/api/v1/object/update-class")
 def update_object_class(req: UpdateObjectClassRequest, db: Session = Depends(get_db)):
     scene_graph = load_scene_graph_from_db(db, req.image_id)

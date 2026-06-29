@@ -274,24 +274,34 @@ export default function HomePage({
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {projects.map((proj) => (
-                <div
-                  key={proj.id}
-                  onClick={() => onSelectProject(proj)}
-                  className="bg-slate-900/80 border border-slate-800 hover:border-cyan-500/60 rounded-2xl p-5 cursor-pointer transition-all duration-300 hover:-translate-y-1 shadow-xl group flex flex-col justify-between space-y-4"
-                >
-                  <div className="space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-cyan-400 bg-cyan-950/80 px-2 py-0.5 rounded border border-cyan-800/60">
+              {projects.map((proj) => {
+                const displayImg = proj.image_url || (proj.image_id === "demo_render_02" ? "/demo_render_02.jpg" : proj.image_id === "demo_render_03" ? "/demo_render_03.jpg" : "/default.jpg");
+                return (
+                  <div
+                    key={proj.id}
+                    onClick={() => onSelectProject(proj)}
+                    className="bg-slate-900/80 border border-slate-800 hover:border-cyan-500/60 rounded-2xl overflow-hidden cursor-pointer transition-all duration-300 hover:-translate-y-1 shadow-xl group flex flex-col justify-between relative"
+                  >
+                    {/* Render Image Thumbnail Header */}
+                    <div className="h-36 w-full relative overflow-hidden bg-slate-950">
+                      <img
+                        src={displayImg}
+                        alt={proj.title}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/20 to-transparent" />
+                      
+                      <span className="absolute top-2.5 left-2.5 text-[10px] font-mono font-bold uppercase tracking-wider text-cyan-300 bg-slate-950/80 backdrop-blur-md px-2 py-0.5 rounded border border-cyan-500/40 shadow-md">
                         {proj.room_type}
                       </span>
+
                       {onDeleteProject && (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             onDeleteProject(proj.id);
                           }}
-                          className="opacity-0 group-hover:opacity-100 p-1 text-slate-500 hover:text-red-400 hover:bg-red-950/60 rounded-lg transition-all"
+                          className="absolute top-2.5 right-2.5 opacity-0 group-hover:opacity-100 p-1.5 bg-slate-950/80 backdrop-blur-md text-slate-300 hover:text-red-400 rounded-lg transition-all border border-slate-800"
                           title="Delete project"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -299,26 +309,31 @@ export default function HomePage({
                       )}
                     </div>
 
-                    <h4 className="text-sm font-bold text-slate-100 group-hover:text-cyan-200 transition-colors line-clamp-1">
-                      {proj.title}
-                    </h4>
+                    {/* Card Content Details */}
+                    <div className="p-4 space-y-3 flex-1 flex flex-col justify-between">
+                      <div className="space-y-1.5">
+                        <h4 className="text-sm font-bold text-slate-100 group-hover:text-cyan-200 transition-colors line-clamp-1">
+                          {proj.title}
+                        </h4>
 
-                    <div className="flex items-center space-x-2 text-[11px] text-slate-400 font-mono">
-                      <span>{proj.design_style}</span>
-                      <span>•</span>
-                      <span className="text-emerald-400 font-semibold">{proj.object_count || 0} objects</span>
+                        <div className="flex items-center space-x-2 text-[11px] text-slate-400 font-mono">
+                          <span>{proj.design_style}</span>
+                          <span>•</span>
+                          <span className="text-emerald-400 font-semibold">{proj.object_count || 0} objects</span>
+                        </div>
+                      </div>
+
+                      <div className="pt-3 border-t border-slate-800/60 flex items-center justify-between text-xs font-mono">
+                        <span className="text-slate-500 text-[10px]">Render ID: {proj.image_id.split('_').slice(-1)[0]}</span>
+                        <span className="text-cyan-400 group-hover:underline font-bold flex items-center gap-1">
+                          <span>Launch Studio</span>
+                          <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+                        </span>
+                      </div>
                     </div>
                   </div>
-
-                  <div className="pt-3 border-t border-slate-800/60 flex items-center justify-between text-xs font-mono">
-                    <span className="text-slate-500 text-[10px]">Render ID: {proj.image_id.split('_').slice(-1)[0]}</span>
-                    <span className="text-cyan-400 group-hover:underline font-bold flex items-center gap-1">
-                      <span>Launch Studio</span>
-                      <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
-                    </span>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

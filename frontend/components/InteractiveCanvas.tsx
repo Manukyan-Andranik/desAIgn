@@ -1,10 +1,10 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { Stage, Layer, Image as KonvaImage, Line, Rect, Text, Group, Arrow } from "react-konva";
+import { Stage, Layer, Image as KonvaImage, Line, Rect, Text, Group, Circle } from "react-konva";
 import useImage from "use-image";
 import { SceneGraph } from "@/types/scene";
-import { ZoomIn, ZoomOut, Maximize2, Move, Paintbrush, MousePointer, Check, X, Sparkles, Square, Wand2, ArrowRight, Layers } from "lucide-react";
+import { ZoomIn, ZoomOut, Maximize2, Move, Paintbrush, MousePointer, Check, X, Sparkles, Square, Wand2, ArrowRight, Layers, Waypoints, RotateCcw } from "lucide-react";
 
 interface InteractiveCanvasProps {
   sceneGraph: SceneGraph | null;
@@ -40,14 +40,18 @@ export default function InteractiveCanvas({
   const [stagePos, setStagePos] = useState({ x: 0, y: 0 });
   const stageRef = useRef<any>(null);
 
-  // Active Tool Mode: Pointer Select vs Brush Draw vs Rectangle Box
-  const [activeTool, setActiveTool] = useState<"select" | "brush" | "rectangle">("select");
+  // Active Tool Mode: Pointer Select vs Brush Draw vs Rectangle Box vs Point-by-Point Polygon
+  const [activeTool, setActiveTool] = useState<"select" | "brush" | "rectangle" | "polygon">("select");
   const [isDrawing, setIsDrawing] = useState(false);
   const [strokePoints, setStrokePoints] = useState<number[][]>([]);
   
   // Rectangle Selection State
   const [rectStartPos, setRectStartPos] = useState<[number, number] | null>(null);
   const [rectCurrentPos, setRectCurrentPos] = useState<[number, number] | null>(null);
+
+  // Point-by-Point Polygon Selection State
+  const [polygonPoints, setPolygonPoints] = useState<number[][]>([]);
+  const [polygonCursorPos, setPolygonCursorPos] = useState<[number, number] | null>(null);
 
   // Modal State for Action Choice (Define Object vs Call Gemini AI)
   const [showSelectionModal, setShowSelectionModal] = useState(false);
@@ -146,15 +150,38 @@ export default function InteractiveCanvas({
       return;
     }
 
+    if (activeTool === "polygon") {
+      const pos = getRawImagePointerPos();
+      if (pos) {
+        // If clicking near start point when >= 3 points, complete polygon
+        if (polygonPoints.length >= 3) {
+          const first = polygonPoints[0];
+          const dist = Math.hypot(pos[0] - first[0], pos[1] - first[1]);
+          if (dist < 25 / totalScale) {
+            setShowSelectionModal(true);
+            return;
+          }
+        }
+        setPolygonPoints((prev) => [...prev, pos]);
+      }
+      return;
+    }
+
     if (e.target === e.target.getStage()) {
       onSelectObject(null);
     }
   };
 
   const handleMouseMove = () => {
-    if (!isDrawing) return;
     const pos = getRawImagePointerPos();
     if (!pos) return;
+
+    if (activeTool === "polygon") {
+      setPolygonCursorPos(pos);
+      return;
+    }
+
+    if (!isDrawing) return;
 
     if (activeTool === "brush") {
       setStrokePoints((prev) => [...prev, pos]);
@@ -164,6 +191,7 @@ export default function InteractiveCanvas({
   };
 
   const handleMouseUp = () => {
+    if (activeTool === "polygon") return;
     if (!isDrawing) return;
     setIsDrawing(false);
 
@@ -178,6 +206,12 @@ export default function InteractiveCanvas({
         setRectStartPos(null);
         setRectCurrentPos(null);
       }
+    }
+  };
+
+  const handleDblClick = () => {
+    if (activeTool === "polygon" && polygonPoints.length >= 3) {
+      setShowSelectionModal(true);
     }
   };
 
@@ -197,6 +231,8 @@ export default function InteractiveCanvas({
         [xmax, ymax],
         [xmin, ymax]
       ];
+    } else if (activeTool === "polygon" && polygonPoints.length >= 3) {
+      pts = polygonPoints;
     }
     if (pts.length === 0) return null;
 
@@ -211,7 +247,7 @@ export default function InteractiveCanvas({
       points: pts,
       bbox: [xmin, ymin, xmax, ymax]
     };
-  }, [strokePoints, rectStartPos, rectCurrentPos, activeTool]);
+  }, [strokePoints, rectStartPos, rectCurrentPos, polygonPoints, activeTool]);
 
   const handleClearSelectionState = () => {
     setShowSelectionModal(false);
@@ -220,6 +256,8 @@ export default function InteractiveCanvas({
     setStrokePoints([]);
     setRectStartPos(null);
     setRectCurrentPos(null);
+    setPolygonPoints([]);
+    setPolygonCursorPos(null);
     setIsSubmitting(false);
   };
 
@@ -244,6 +282,7 @@ export default function InteractiveCanvas({
   if (!sceneGraph) return null;
 
   const flatStrokePoints = strokePoints.flatMap((p) => [p[0], p[1]]);
+  const flatPolygonPoints = polygonPoints.flatMap((p) => [p[0], p[1]]);
 
   // Active Rectangle bounds for stage drawing preview
   let activeRectProps = null;
@@ -258,6 +297,34 @@ export default function InteractiveCanvas({
   return (
     <div id="canvas-container" className="w-full h-full relative bg-[#07080c] flex items-center justify-center overflow-hidden font-sans">
       
+      {/* Active Polygon Live Control Bar overlay when placing points */}
+      {activeTool === "polygon" && polygonPoints.length > 0 && (
+        <div className="absolute top-6 left-1/2 -translate-x-1/2 z-30 flex items-center space-x-3 px-4 py-2 bg-slate-950/90 border border-cyan-500/60 rounded-2xl shadow-2xl backdrop-blur-xl animate-fade-in">
+          <div className="flex items-center space-x-2 text-xs font-mono text-cyan-300">
+            <Waypoints className="w-4 h-4 text-cyan-400 animate-pulse" />
+            <span>Polygon Points: <strong>{polygonPoints.length}</strong></span>
+          </div>
+          <div className="h-4 w-[1px] bg-slate-800" />
+          <button
+            onClick={() => setPolygonPoints([])}
+            className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold flex items-center space-x-1 transition-all"
+          >
+            <RotateCcw className="w-3 h-3" />
+            <span>Clear</span>
+          </button>
+          <button
+            onClick={() => {
+              if (polygonPoints.length >= 3) setShowSelectionModal(true);
+            }}
+            disabled={polygonPoints.length < 3}
+            className="px-3 py-1 rounded-lg bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white text-xs font-bold flex items-center space-x-1.5 shadow-md shadow-cyan-500/25 transition-all disabled:opacity-50"
+          >
+            <Check className="w-3.5 h-3.5" />
+            <span>Complete Selection</span>
+          </button>
+        </div>
+      )}
+
       {/* Floating Canvas Controls Toolbar */}
       <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center space-x-2 p-1.5 glass-panel rounded-2xl border border-slate-700/60 shadow-2xl shadow-black/80 backdrop-blur-xl">
         
@@ -269,6 +336,7 @@ export default function InteractiveCanvas({
               setStrokePoints([]);
               setRectStartPos(null);
               setRectCurrentPos(null);
+              setPolygonPoints([]);
             }}
             className={`px-3 py-1.5 rounded-lg text-xs font-mono transition-all flex items-center space-x-1.5 ${
               activeTool === "select"
@@ -286,6 +354,7 @@ export default function InteractiveCanvas({
               setActiveTool("brush");
               setRectStartPos(null);
               setRectCurrentPos(null);
+              setPolygonPoints([]);
             }}
             className={`px-3 py-1.5 rounded-lg text-xs font-mono transition-all flex items-center space-x-1.5 ${
               activeTool === "brush"
@@ -302,6 +371,7 @@ export default function InteractiveCanvas({
             onClick={() => {
               setActiveTool("rectangle");
               setStrokePoints([]);
+              setPolygonPoints([]);
             }}
             className={`px-3 py-1.5 rounded-lg text-xs font-mono transition-all flex items-center space-x-1.5 ${
               activeTool === "rectangle"
@@ -312,6 +382,24 @@ export default function InteractiveCanvas({
           >
             <Square className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Rectangle Box</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setActiveTool("polygon");
+              setStrokePoints([]);
+              setRectStartPos(null);
+              setRectCurrentPos(null);
+            }}
+            className={`px-3 py-1.5 rounded-lg text-xs font-mono transition-all flex items-center space-x-1.5 ${
+              activeTool === "polygon"
+                ? "bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-bold shadow-md shadow-cyan-500/25"
+                : "text-slate-400 hover:text-slate-200"
+            }`}
+            title="Point-by-Point Straight Line Polygon Selection Mode"
+          >
+            <Waypoints className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Polygon Area</span>
           </button>
         </div>
 
@@ -354,11 +442,17 @@ export default function InteractiveCanvas({
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2.5">
                 <div className="w-10 h-10 rounded-2xl bg-cyan-950 border border-cyan-500/50 flex items-center justify-center text-cyan-400 shadow-lg">
-                  {activeTool === "brush" ? <Paintbrush className="w-5 h-5 animate-pulse" /> : <Square className="w-5 h-5 animate-pulse" />}
+                  {activeTool === "brush" ? (
+                    <Paintbrush className="w-5 h-5 animate-pulse" />
+                  ) : activeTool === "rectangle" ? (
+                    <Square className="w-5 h-5 animate-pulse" />
+                  ) : (
+                    <Waypoints className="w-5 h-5 animate-pulse" />
+                  )}
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wide">
-                    {activeTool === "brush" ? "Brush Region Selected" : "Rectangle Region Selected"}
+                    {activeTool === "brush" ? "Brush Region Selected" : activeTool === "rectangle" ? "Rectangle Region Selected" : "Point-by-Point Polygon Selected"}
                   </h3>
                   <p className="text-[11px] text-slate-400 font-mono">
                     BBox: [{currentSelection.bbox.join(", ")}]
@@ -502,6 +596,7 @@ export default function InteractiveCanvas({
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
+        onDblClick={handleDblClick}
         style={{ cursor: activeTool === "select" ? "grab" : "crosshair" }}
       >
         <Layer scaleX={totalScale} scaleY={totalScale}>
@@ -615,6 +710,54 @@ export default function InteractiveCanvas({
               shadowColor="#06b6d4"
               shadowBlur={10}
             />
+          )}
+
+          {/* Active User Point-by-Point Straight-Line Polygon Preview */}
+          {activeTool === "polygon" && (
+            <Group>
+              {/* Placed straight lines connecting points */}
+              {flatPolygonPoints.length >= 4 && (
+                <Line
+                  points={flatPolygonPoints}
+                  stroke="#06b6d4"
+                  strokeWidth={2.5 / totalScale}
+                  closed={false}
+                  tension={0}
+                  shadowColor="#06b6d4"
+                  shadowBlur={10}
+                />
+              )}
+
+              {/* Dynamic live rubberband line from last placed point to mouse cursor */}
+              {polygonPoints.length > 0 && polygonCursorPos && (
+                <Line
+                  points={[
+                    polygonPoints[polygonPoints.length - 1][0],
+                    polygonPoints[polygonPoints.length - 1][1],
+                    polygonCursorPos[0],
+                    polygonCursorPos[1]
+                  ]}
+                  stroke="rgba(6, 182, 212, 0.8)"
+                  strokeWidth={1.5 / totalScale}
+                  dash={[6, 4]}
+                />
+              )}
+
+              {/* Glowing circular nodes at each polygon vertex */}
+              {polygonPoints.map((p, idx) => (
+                <Circle
+                  key={idx}
+                  x={p[0]}
+                  y={p[1]}
+                  radius={(idx === 0 ? 7 : 4) / totalScale}
+                  fill={idx === 0 ? "#22c55e" : "#06b6d4"}
+                  stroke="#ffffff"
+                  strokeWidth={1.5 / totalScale}
+                  shadowColor={idx === 0 ? "#22c55e" : "#06b6d4"}
+                  shadowBlur={8}
+                />
+              ))}
+            </Group>
           )}
 
         </Layer>

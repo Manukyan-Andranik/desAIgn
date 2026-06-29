@@ -10,7 +10,7 @@ import ProjectsPage from "@/components/ProjectsPage";
 import AuthModal from "@/components/AuthModal";
 import ProgressLoader from "@/components/ProgressLoader";
 import UserAccountMenu from "@/components/UserAccountMenu";
-import { Sparkles, Upload, RefreshCw, Cpu, CheckCircle2, Scan, Loader2, Home, Palette, Sliders, Layers, ArrowRight, X, LayoutDashboard, Plus, Trash2, Folder } from "lucide-react";
+import { Sparkles, Upload, RefreshCw, Cpu, CheckCircle2, Scan, Loader2, Home, Palette, Sliders, Layers, ArrowRight, X, LayoutDashboard, Plus, Trash2, Folder, Undo2, Redo2 } from "lucide-react";
 
 const InteractiveCanvas = dynamic(() => import("@/components/InteractiveCanvas"), {
   ssr: false,
@@ -50,6 +50,65 @@ export default function StudioPage() {
   const [hoveredObjectId, setHoveredObjectId] = useState<string | null>(null);
   const [showBBoxes, setShowBBoxes] = useState<boolean>(false);
   const [notification, setNotification] = useState<{ message: string; model?: string; type?: "info" | "success" | "ai" } | null>(null);
+
+  // Undo / Redo History Stacks State
+  const [historyStack, setHistoryStack] = useState<SceneGraph[]>([]);
+  const [redoStack, setRedoStack] = useState<SceneGraph[]>([]);
+
+  const updateSceneGraphWithHistory = (newSG: SceneGraph | ((prev: SceneGraph | null) => SceneGraph | null)) => {
+    setSceneGraph((prev) => {
+      const nextSG = typeof newSG === "function" ? newSG(prev) : newSG;
+      if (prev && nextSG && JSON.stringify(prev) !== JSON.stringify(nextSG)) {
+        setHistoryStack((h) => [...h.slice(-25), JSON.parse(JSON.stringify(prev))]);
+        setRedoStack([]);
+      }
+      return nextSG;
+    });
+  };
+
+  const handleUndo = () => {
+    if (historyStack.length === 0 || !sceneGraph) return;
+    const previous = historyStack[historyStack.length - 1];
+    setHistoryStack((prev) => prev.slice(0, prev.length - 1));
+    setRedoStack((prev) => [...prev, JSON.parse(JSON.stringify(sceneGraph))]);
+    setSceneGraph(previous);
+    showToast("Undo (Ctrl+Z): Restored previous scene state.", "History OS", "info");
+  };
+
+  const handleRedo = () => {
+    if (redoStack.length === 0 || !sceneGraph) return;
+    const next = redoStack[redoStack.length - 1];
+    setRedoStack((prev) => prev.slice(0, prev.length - 1));
+    setHistoryStack((prev) => [...prev, JSON.parse(JSON.stringify(sceneGraph))]);
+    setSceneGraph(next);
+    showToast("Redo (Ctrl+Shift+Z): Re-applied scene state.", "History OS", "info");
+  };
+
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+      const isCmdOrCtrl = e.ctrlKey || e.metaKey;
+      if (!isCmdOrCtrl) return;
+
+      const key = e.key.toLowerCase();
+      if (key === "z") {
+        if (e.shiftKey) {
+          e.preventDefault();
+          handleRedo();
+        } else {
+          e.preventDefault();
+          handleUndo();
+        }
+      } else if (key === "y") {
+        e.preventDefault();
+        handleRedo();
+      }
+    };
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
+  }, [historyStack, redoStack, sceneGraph]);
   
   // Interactive Room Function & Style Setup State
   const [showSetupModal, setShowSetupModal] = useState<boolean>(false);
@@ -280,7 +339,7 @@ export default function StudioPage() {
     showToast(res.message, "Generative AI", "ai");
 
     if ((res.updated_object || res.updated_image_url) && sceneGraph) {
-      setSceneGraph((prev) => {
+      updateSceneGraphWithHistory((prev) => {
         if (!prev) return prev;
         return {
           ...prev,
@@ -296,7 +355,7 @@ export default function StudioPage() {
 
   const handleClassUpdated = (updatedObj: SceneObject) => {
     showToast(`Updated class to '${updatedObj.class}'. Model learned new taxonomy!`, "Active Learning", "success");
-    setSceneGraph((prev) => {
+    updateSceneGraphWithHistory((prev) => {
       if (!prev) return prev;
       return {
         ...prev,
@@ -317,7 +376,7 @@ export default function StudioPage() {
           setSelectedObjectId(null);
         }
         setSelectedObjectIds((prev) => prev.filter((i) => i !== deletedId));
-        setSceneGraph((prev) => {
+        updateSceneGraphWithHistory((prev) => {
           if (!prev) return prev;
           return {
             ...prev,
@@ -546,6 +605,24 @@ export default function StudioPage() {
                 title="Toggle Bounding Boxes"
               >
                 Boxes: {showBBoxes ? "ON" : "OFF"}
+              </button>
+
+              <button
+                onClick={handleUndo}
+                disabled={historyStack.length === 0}
+                className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 rounded-lg transition-all disabled:opacity-30"
+                title="Undo Previous Action (Ctrl+Z / Cmd+Z)"
+              >
+                <Undo2 className="w-3.5 h-3.5" />
+              </button>
+
+              <button
+                onClick={handleRedo}
+                disabled={redoStack.length === 0}
+                className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 rounded-lg transition-all disabled:opacity-30"
+                title="Redo Next Action (Ctrl+Shift+Z / Cmd+Shift+Z)"
+              >
+                <Redo2 className="w-3.5 h-3.5" />
               </button>
 
               <button

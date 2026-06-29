@@ -61,6 +61,23 @@ export default function InteractiveCanvas({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && !e.shiftKey) {
+        if (activeTool === "polygon" && polygonPoints.length > 0) {
+          e.preventDefault();
+          e.stopPropagation();
+          setPolygonPoints((prev) => prev.slice(0, prev.length - 1));
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [activeTool, polygonPoints.length]);
+
+  useEffect(() => {
     const updateDimensions = () => {
       const container = document.getElementById("canvas-container");
       if (container) {
@@ -306,10 +323,18 @@ export default function InteractiveCanvas({
           </div>
           <div className="h-4 w-[1px] bg-slate-800" />
           <button
+            onClick={() => setPolygonPoints((prev) => prev.slice(0, prev.length - 1))}
+            className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold flex items-center space-x-1 transition-all"
+            title="Undo Last Vertex Point (Ctrl+Z)"
+          >
+            <RotateCcw className="w-3 h-3 text-cyan-400" />
+            <span>Undo Point</span>
+          </button>
+          <button
             onClick={() => setPolygonPoints([])}
             className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold flex items-center space-x-1 transition-all"
           >
-            <RotateCcw className="w-3 h-3" />
+            <X className="w-3 h-3" />
             <span>Clear</span>
           </button>
           <button

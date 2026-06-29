@@ -185,33 +185,6 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
           </button>
         </form>
 
-        {/* Quick Demo Logins */}
-        <div className="pt-2 border-t border-slate-800/80 space-y-2">
-          <div className="text-[10px] font-mono text-slate-500 uppercase tracking-wider text-center font-semibold">
-            One-Click Studio Demo Logins
-          </div>
-          <div className="grid grid-cols-3 gap-2 font-mono text-[11px]">
-            <button
-              onClick={() => quickDemoLogin("alex@architects.io")}
-              className="p-2 bg-slate-950 hover:bg-slate-900 border border-slate-800 hover:border-cyan-500/60 rounded-xl text-cyan-300 transition-all text-center truncate"
-            >
-              Alex (Studio)
-            </button>
-            <button
-              onClick={() => quickDemoLogin("sarah@designstudio.com")}
-              className="p-2 bg-slate-950 hover:bg-slate-900 border border-slate-800 hover:border-cyan-500/60 rounded-xl text-cyan-300 transition-all text-center truncate"
-            >
-              Sarah (Nordic)
-            </button>
-            <button
-              onClick={() => quickDemoLogin("pro@antigravity.os")}
-              className="p-2 bg-slate-950 hover:bg-slate-900 border border-slate-800 hover:border-cyan-500/60 rounded-xl text-cyan-300 transition-all text-center truncate"
-            >
-              Studio Pro
-            </button>
-          </div>
-        </div>
-
         {/* Close button */}
         <button
           onClick={onClose}

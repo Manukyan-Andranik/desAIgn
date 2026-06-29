@@ -317,7 +317,7 @@ export default function StudioPage() {
     formData.append("file", file);
     formData.append("room_type", roomType);
     formData.append("design_style", designStyle);
-    formData.append("user_id", activeUser?.id || "usr_alex");
+    formData.append("user_id", activeUser?.id || "");
     formData.append("project_title", `${roomType} (${file.name})`);
 
     try {

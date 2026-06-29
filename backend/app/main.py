@@ -46,6 +46,10 @@ def run_db_migrations():
                 with engine.connect() as conn:
                     conn.execute(text("ALTER TABLE users ADD COLUMN password_hash VARCHAR"))
                     conn.commit()
+            with engine.connect() as conn:
+                conn.execute(text("DELETE FROM users WHERE id IN ('usr_alex', 'usr_sarah', 'usr_studio') OR email IN ('alex@architects.io', 'sarah@designstudio.com', 'pro@antigravity.os')"))
+                conn.execute(text("DELETE FROM projects WHERE user_id IN ('usr_alex', 'usr_sarah', 'usr_studio')"))
+                conn.commit()
     except Exception as e:
         print(f"[DB Migration Warning] {e}")
 
@@ -318,11 +322,6 @@ async def detect_objects_endpoint(file: UploadFile = File(...)):
 def login_user(req: LoginRequest, db: Session = Depends(get_db)):
     clean_email = req.email.strip().lower()
     user = db.query(db_models.UserRecord).filter(db_models.UserRecord.email == clean_email).first()
-    
-    if not user:
-        if clean_email in ["alex@architects.io", "sarah@designstudio.com", "pro@antigravity.os"]:
-            get_users(db)
-            user = db.query(db_models.UserRecord).filter(db_models.UserRecord.email == clean_email).first()
             
     if not user:
         raise HTTPException(status_code=404, detail="No registered account found for this email.")
@@ -367,33 +366,11 @@ def register_user(req: RegisterRequest, db: Session = Depends(get_db)):
 @app.get("/api/v1/users", response_model=list[UserSchema])
 def get_users(db: Session = Depends(get_db)):
     users = db.query(db_models.UserRecord).all()
-    if not users:
-        demo_users = [
-            db_models.UserRecord(id="usr_alex", name="Alex Rivera", email="alex@architects.io", avatar="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80"),
-            db_models.UserRecord(id="usr_sarah", name="Sarah Lin", email="sarah@designstudio.com", avatar="https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&auto=format&fit=crop&q=80"),
-            db_models.UserRecord(id="usr_studio", name="Studio Pro", email="pro@antigravity.os", avatar="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&auto=format&fit=crop&q=80")
-        ]
-        for u in demo_users:
-            db.add(u)
-        db.commit()
-        users = db.query(db_models.UserRecord).all()
     return [UserSchema(id=u.id, name=u.name, email=u.email, avatar=u.avatar) for u in users]
 
 @app.get("/api/v1/users/{user_id}/projects", response_model=list[ProjectSchema])
 def get_user_projects(user_id: str, db: Session = Depends(get_db)):
     projects = db.query(db_models.ProjectRecord).filter(db_models.ProjectRecord.user_id == user_id).all()
-    if not projects and user_id in ["usr_alex", "usr_sarah", "usr_studio"]:
-        if user_id == "usr_alex":
-            p1 = db_models.ProjectRecord(id="proj_japandi_01", user_id="usr_alex", title="Japandi Villa Sanctuary", image_id="demo_render_01", room_type="Living Room", design_style="Japandi Minimalist")
-            db.add(p1)
-        elif user_id == "usr_sarah":
-            p2 = db_models.ProjectRecord(id="proj_nordic_02", user_id="usr_sarah", title="Nordic Artisan Bakery", image_id="demo_render_02", room_type="Cafe & Restaurant", design_style="Scandinavian Modern")
-            db.add(p2)
-        else:
-            p3 = db_models.ProjectRecord(id="proj_biophilic_03", user_id="usr_studio", title="Biophilic Executive Suite", image_id="demo_render_03", room_type="Office & Study", design_style="Biophilic Luxury")
-            db.add(p3)
-        db.commit()
-        projects = db.query(db_models.ProjectRecord).filter(db_models.ProjectRecord.user_id == user_id).all()
     
     result = []
     for p in projects:

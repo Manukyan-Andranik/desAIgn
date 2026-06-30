@@ -26,12 +26,44 @@ def run_db_migrations():
                 with engine.connect() as conn:
                     conn.execute(text("ALTER TABLE users ADD COLUMN password_hash VARCHAR"))
                     conn.commit()
+            if "credits" not in user_columns:
+                with engine.connect() as conn:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN credits INTEGER DEFAULT 1000"))
+                    conn.commit()
+            if "edit_count" not in user_columns:
+                with engine.connect() as conn:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN edit_count INTEGER DEFAULT 0"))
+                    conn.commit()
+            if "plan" not in user_columns:
+                with engine.connect() as conn:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN plan VARCHAR DEFAULT 'Standard'"))
+                    conn.commit()
             with engine.connect() as conn:
-                conn.execute(text("DELETE FROM users WHERE id IN ('usr_alex', 'usr_sarah', 'usr_studio') OR email IN ('alex@architects.io', 'sarah@designstudio.com', 'pro@antigravity.os')"))
-                conn.execute(text("DELETE FROM projects WHERE user_id IN ('usr_alex', 'usr_sarah', 'usr_studio')"))
+                conn.execute(text(
+                    "DELETE FROM projects WHERE user_id IN ("
+                    "  SELECT id FROM users WHERE "
+                    "    id IN ('usr_alex', 'usr_sarah', 'usr_studio', 'usr_guest') "
+                    "    OR email IN ('alex@architects.io', 'sarah@designstudio.com', 'pro@antigravity.os', 'test@example.com') "
+                    "    OR email LIKE 'testuser_%@example.com' "
+                    "    OR email LIKE 'test_%@example.com'"
+                    ")"
+                ))
+                conn.execute(text(
+                    "DELETE FROM projects WHERE user_id IN ('usr_alex', 'usr_sarah', 'usr_studio') "
+                    "OR image_id LIKE 'demo_render%'"
+                ))
+                conn.execute(text(
+                    "DELETE FROM users WHERE "
+                    "id IN ('usr_alex', 'usr_sarah', 'usr_studio', 'usr_guest') "
+                    "OR email IN ('alex@architects.io', 'sarah@designstudio.com', 'pro@antigravity.os', 'test@example.com') "
+                    "OR email LIKE 'testuser_%@example.com' "
+                    "OR email LIKE 'test_%@example.com'"
+                ))
                 conn.commit()
     except Exception as e:
+
         print(f"[DB Migration Warning] {e}")
+
 
 run_db_migrations()
 

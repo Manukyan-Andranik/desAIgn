@@ -2,7 +2,8 @@
 
 import React, { useState } from "react";
 import { User } from "@/types/scene";
-import { Sparkles, Lock, Mail, User as UserIcon, LogIn, UserPlus, CheckCircle2, ShieldCheck, ArrowRight } from "lucide-react";
+import { Sparkles, Lock, Mail, User as UserIcon, LogIn, UserPlus, ArrowRight, X, Eye, EyeOff } from "lucide-react";
+import { API_BASE, parseApiError } from "@/lib/api";
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -17,6 +18,7 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
   if (!isOpen) return null;
 
@@ -32,10 +34,15 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
       return;
     }
 
+    if (mode === "register" && password.length < 6) {
+      setError("Password must be at least 6 characters.");
+      return;
+    }
+
     setLoading(true);
     try {
-      const endpoint = mode === "login" ? "http://localhost:8000/api/v1/auth/login" : "http://localhost:8000/api/v1/auth/register";
-      const payload = mode === "login" ? { email, password } : { name, email, password };
+      const endpoint = mode === "login" ? `${API_BASE}/api/v1/auth/login` : `${API_BASE}/api/v1/auth/register`;
+      const payload = mode === "login" ? { email: email.trim(), password } : { name: name.trim(), email: email.trim(), password };
 
       const res = await fetch(endpoint, {
         method: "POST",
@@ -45,67 +52,50 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
 
       if (res.ok) {
         const user: User = await res.json();
+        setName("");
+        setEmail("");
+        setPassword("");
         onSuccess(user);
         onClose();
       } else {
-        const data = await res.json();
-        setError(data.detail || "Authentication failed.");
+        const data = await res.json().catch(() => ({}));
+        setError(parseApiError(data, "Sign in failed. Try again."));
       }
     } catch (err) {
       console.error("Auth error:", err);
-      setError("Unable to connect to authentication server.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const quickDemoLogin = async (demoEmail: string) => {
-    setLoading(true);
-    try {
-      const res = await fetch("http://localhost:8000/api/v1/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: demoEmail, password: "demo" })
-      });
-      if (res.ok) {
-        const user: User = await res.json();
-        onSuccess(user);
-        onClose();
-      }
-    } catch (err) {
-      console.error("Quick demo login error:", err);
+      setError("Can't reach the server. Try again.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xl flex items-center justify-center p-4 animate-fade-in font-sans select-none">
-      <div className="w-full max-w-md bg-[#0c0e14] border border-cyan-500/50 rounded-3xl p-7 shadow-2xl space-y-6 relative overflow-hidden">
-        
+    <div className="fixed inset-0 z-50 bg-[#0F172A]/30 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in font-sans select-none" onClick={onClose}>
+      <div className="w-full max-w-md bg-white border border-[#E2E8F0] rounded-2xl p-8 shadow-lg space-y-6 relative overflow-hidden animate-scale-in" onClick={e => e.stopPropagation()}>
+
         {/* Background Glow */}
-        <div className="absolute -top-24 -left-24 w-48 h-48 bg-cyan-500/20 blur-3xl pointer-events-none rounded-full" />
-        
+        <div className="absolute -top-24 -left-24 w-48 h-48 bg-[#4F46E5]/5 blur-3xl pointer-events-none rounded-full" />
+
         {/* Header */}
         <div className="text-center space-y-2">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center text-white mx-auto shadow-lg shadow-cyan-500/30">
-            <Sparkles className="w-6 h-6 animate-pulse" />
+          <div className="w-12 h-12 rounded-xl bg-white border border-[#E2E8F0] flex items-center justify-center text-[#4F46E5] mx-auto shadow-sm">
+            <Sparkles className="w-6 h-6 text-[#0EA5E9]" />
           </div>
-          <h2 className="text-xl font-extrabold text-slate-100 tracking-tight">
-            {mode === "login" ? "Welcome Back to Antigravity" : "Create Studio Account"}
+          <h2 className="text-2xl font-extrabold text-[#0F172A] tracking-tight">
+            {mode === "login" ? "Welcome back" : "Create your account"}
           </h2>
-          <p className="text-xs text-slate-400 font-sans">
-            {mode === "login" ? "Sign in to access your architectural render projects." : "Register to start building AI spatial scene graphs."}
+          <p className="text-xs text-[#64748B]">
+            {mode === "login" ? "Sign in to open your projects." : "Create an account to start designing with AI."}
           </p>
         </div>
 
         {/* Tab Toggle */}
-        <div className="flex bg-slate-950 p-1 rounded-2xl border border-slate-800 font-mono text-xs">
+        <div className="flex bg-slate-50 p-1 rounded-xl border border-[#E2E8F0] font-mono text-xs shadow-inner">
           <button
             type="button"
             onClick={() => setMode("login")}
-            className={`flex-1 py-2 rounded-xl transition-all flex items-center justify-center space-x-2 font-bold ${
-              mode === "login" ? "bg-cyan-500 text-black shadow-md shadow-cyan-500/20" : "text-slate-400 hover:text-slate-200"
+            className={`flex-1 py-2.5 rounded-lg transition-all flex items-center justify-center space-x-2 font-bold ${
+              mode === "login" ? "bg-[#4F46E5] text-white border border-[#E2E8F0] shadow-sm" : "text-[#64748B] hover:text-[#0F172A]"
             }`}
           >
             <LogIn className="w-3.5 h-3.5" />
@@ -114,8 +104,8 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
           <button
             type="button"
             onClick={() => setMode("register")}
-            className={`flex-1 py-2 rounded-xl transition-all flex items-center justify-center space-x-2 font-bold ${
-              mode === "register" ? "bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-md shadow-cyan-500/25" : "text-slate-400 hover:text-slate-200"
+            className={`flex-1 py-2.5 rounded-lg transition-all flex items-center justify-center space-x-2 font-bold ${
+              mode === "register" ? "bg-[#4F46E5] text-white border border-[#E2E8F0] shadow-sm" : "text-[#64748B] hover:text-[#0F172A]"
             }`}
           >
             <UserPlus className="w-3.5 h-3.5" />
@@ -124,73 +114,93 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
         </div>
 
         {error && (
-          <div className="p-3 rounded-xl bg-red-950/80 border border-red-800 text-red-300 text-xs text-center font-medium">
+          <div className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-red-600 text-xs text-center font-medium">
             {error}
           </div>
         )}
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="space-y-4 font-sans">
+        <form onSubmit={handleSubmit} className="space-y-4">
           {mode === "register" && (
             <div className="space-y-1.5">
-              <label className="text-[11px] font-mono text-slate-400 uppercase tracking-wider font-semibold">Full Name</label>
+              <label className="text-[10px] font-mono text-[#0F172A] uppercase tracking-wider font-bold">Full Name</label>
               <div className="relative flex items-center">
-                <UserIcon className="w-4 h-4 text-slate-500 absolute left-3.5 pointer-events-none" />
+                <UserIcon className="w-4 h-4 text-[#64748B] absolute left-3.5 pointer-events-none" />
                 <input
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="e.g. Alex Rivera"
-                  className="w-full bg-slate-950 border border-slate-800 focus:border-cyan-500 rounded-xl pl-10 pr-4 py-2.5 text-xs text-slate-100 placeholder-slate-600 focus:outline-none transition-all"
+                  className="w-full bg-white border border-[#E2E8F0] focus:border-[#4F46E5] focus:ring-1 focus:ring-[#4F46E5] rounded-xl pl-10 pr-4 py-2.5 text-sm text-[#0F172A] placeholder-[#64748B]/50 focus:outline-none transition-all duration-200"
                 />
               </div>
             </div>
           )}
 
           <div className="space-y-1.5">
-            <label className="text-[11px] font-mono text-slate-400 uppercase tracking-wider font-semibold">Email Address</label>
+            <label className="text-[10px] font-mono text-[#0F172A] uppercase tracking-wider font-bold">Email Address</label>
             <div className="relative flex items-center">
-              <Mail className="w-4 h-4 text-slate-500 absolute left-3.5 pointer-events-none" />
+              <Mail className="w-4 h-4 text-[#64748B] absolute left-3.5 pointer-events-none" />
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="alex@architects.io"
-                className="w-full bg-slate-950 border border-slate-800 focus:border-cyan-500 rounded-xl pl-10 pr-4 py-2.5 text-xs text-slate-100 placeholder-slate-600 focus:outline-none transition-all"
+                className="w-full bg-white border border-[#E2E8F0] focus:border-[#4F46E5] focus:ring-1 focus:ring-[#4F46E5] rounded-xl pl-10 pr-4 py-2.5 text-sm text-[#0F172A] placeholder-[#64748B]/50 focus:outline-none transition-all duration-200"
               />
             </div>
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-[11px] font-mono text-slate-400 uppercase tracking-wider font-semibold">Password</label>
+            <label className="text-[10px] font-mono text-[#0F172A] uppercase tracking-wider font-bold">Password</label>
             <div className="relative flex items-center">
-              <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 pointer-events-none" />
+              <Lock className="w-4 h-4 text-[#64748B] absolute left-3.5 pointer-events-none" />
               <input
-                type="password"
+                type={showPassword ? "text" : "password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="w-full bg-slate-950 border border-slate-800 focus:border-cyan-500 rounded-xl pl-10 pr-4 py-2.5 text-xs text-slate-100 placeholder-slate-600 focus:outline-none transition-all"
+                className="w-full bg-white border border-[#E2E8F0] focus:border-[#4F46E5] focus:ring-1 focus:ring-[#4F46E5] rounded-xl pl-10 pr-10 py-2.5 text-sm text-[#0F172A] placeholder-[#64748B]/50 focus:outline-none transition-all duration-200"
               />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 text-[#64748B] hover:text-[#0F172A] transition-colors p-0.5"
+                aria-label={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
             </div>
           </div>
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-3 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-extrabold rounded-xl text-xs flex items-center justify-center space-x-2 shadow-lg shadow-cyan-500/25 transition-all disabled:opacity-50 mt-2 active:scale-95"
+            className="w-full py-3.5 bg-[#4F46E5] hover:bg-[#6366F1] text-white border-0 font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center space-x-2 transition-all duration-200 disabled:opacity-50 mt-2 active:scale-[0.97] shadow-lg shadow-[#4F46E5]/20"
           >
-            <span>{loading ? "Authenticating..." : mode === "login" ? "Sign In to Workspace" : "Create Account"}</span>
+            <span>{loading ? "Signing in..." : mode === "login" ? "Log in" : "Create account"}</span>
             <ArrowRight className="w-4 h-4" />
           </button>
         </form>
 
+        {/* Footer text link */}
+        <div className="text-center pt-2">
+          <button
+            type="button"
+            onClick={() => setMode(mode === "login" ? "register" : "login")}
+            className="text-xs text-[#64748B] hover:text-[#4F46E5] hover:underline"
+          >
+            {mode === "login" ? "Don't have an account? Sign up" : "Already have an account? Log in"}
+          </button>
+        </div>
+
         {/* Close button */}
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 text-slate-500 hover:text-slate-300 p-1.5 rounded-lg transition-colors"
+          className="absolute top-4 right-4 text-[#64748B] hover:text-[#0F172A] hover:bg-slate-50 border border-transparent hover:border-[#E2E8F0] p-1.5 rounded-lg transition-all duration-200"
+          aria-label="Close authentication modal"
         >
-          ✕
+          <X className="w-4 h-4" />
         </button>
 
       </div>

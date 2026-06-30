@@ -7,29 +7,35 @@ import LayersSidebar from "@/components/LayersSidebar";
 import Inspector from "@/components/Inspector";
 import HomePage from "@/components/HomePage";
 import ProjectsPage from "@/components/ProjectsPage";
+import AboutPage from "@/components/AboutPage";
+import PricingPage from "@/components/PricingPage";
+import AccountPage from "@/components/AccountPage";
 import AuthModal from "@/components/AuthModal";
 import ProgressLoader from "@/components/ProgressLoader";
 import UserAccountMenu from "@/components/UserAccountMenu";
-import { Sparkles, Upload, RefreshCw, Cpu, CheckCircle2, Scan, Loader2, Home, Palette, Sliders, Layers, ArrowRight, X, LayoutDashboard, Plus, Trash2, Folder, Undo2, Redo2, ShieldAlert, LogIn, Lock } from "lucide-react";
+import ThemeToggle from "@/components/ThemeToggle";
+import { API_BASE, parseApiError, fetchUserById } from "@/lib/api";
+import { Sparkles, Upload, RefreshCw, Cpu, CheckCircle2, Scan, Loader2, Home, Palette, Sliders, Layers, ArrowRight, X, LayoutDashboard, Plus, Trash2, Folder, Undo2, Redo2, ShieldAlert, LogIn, Lock, Info, Tag, Download, Wand2, User as UserIcon, Sofa, ChefHat, Bed, Bath, Briefcase, Coffee, Trees } from "lucide-react";
+
 
 const InteractiveCanvas = dynamic(() => import("@/components/InteractiveCanvas"), {
   ssr: false,
   loading: () => (
-    <div className="w-full h-full flex flex-col items-center justify-center bg-[#07080c] text-slate-400 font-mono text-xs space-y-3 select-none">
+    <div className="w-full h-full flex flex-col items-center justify-center bg-background text-muted-foreground font-mono text-xs space-y-3 select-none">
       <Cpu className="w-5 h-5 text-cyan-400 animate-spin" />
-      <span>Loading Viewport...</span>
+      <span>Loading your design...</span>
     </div>
   )
 });
 
 const ROOM_OPTIONS = [
-  { id: "Living Room", label: "Living Room", icon: "🛋️", desc: "Sofas, coffee tables, TV consoles, lounge armchairs" },
-  { id: "Kitchen", label: "Kitchen", icon: "🍳", desc: "Kitchen islands, stoves, refrigerators, cabinets, sinks" },
-  { id: "Bedroom", label: "Bedroom", icon: "🖏️", desc: "Beds, nightstands, headboards, wardrobes, dressers" },
-  { id: "Bathroom", label: "Bathroom", icon: "🛁", desc: "Bathtubs, shower enclosures, vanities, mirrors, sinks" },
-  { id: "Office & Study", label: "Office & Study", icon: "💼", desc: "Executive desks, task chairs, bookcases, monitors" },
-  { id: "Cafe & Restaurant", label: "Cafe & Restaurant", icon: "☕", desc: "Espresso machines, cafe tables, bar counters, displays" },
-  { id: "Outdoor Patio", label: "Outdoor Patio", icon: "🌿", desc: "Patio loungers, outdoor dining, pergolas, planters" }
+  { id: "Living Room", label: "Living Room", icon: Sofa, desc: "Sofas, coffee tables, TV consoles, lounge armchairs" },
+  { id: "Kitchen", label: "Kitchen", icon: ChefHat, desc: "Kitchen islands, stoves, refrigerators, cabinets, sinks" },
+  { id: "Bedroom", label: "Bedroom", icon: Bed, desc: "Beds, nightstands, headboards, wardrobes, dressers" },
+  { id: "Bathroom", label: "Bathroom", icon: Bath, desc: "Bathtubs, shower enclosures, vanities, mirrors, sinks" },
+  { id: "Office & Study", label: "Office & Study", icon: Briefcase, desc: "Executive desks, task chairs, bookcases, monitors" },
+  { id: "Cafe & Restaurant", label: "Cafe & Restaurant", icon: Coffee, desc: "Espresso machines, cafe tables, bar counters, displays" },
+  { id: "Outdoor Patio", label: "Outdoor Patio", icon: Trees, desc: "Patio loungers, outdoor dining, pergolas, planters" }
 ];
 
 const STYLE_OPTIONS = [
@@ -42,9 +48,100 @@ const STYLE_OPTIONS = [
 ];
 
 export default function StudioPage() {
-  const [viewMode, setViewMode] = useState<"home" | "projects" | "studio">("home");
+  const [mounted, setMounted] = useState(false);
+  const [viewMode, setViewMode] = useState<"home" | "about" | "pricing" | "projects" | "account" | "studio">("home");
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [sceneGraph, setSceneGraph] = useState<SceneGraph | null>(null);
+
+  const navigateToPage = (mode: "home" | "about" | "pricing" | "projects" | "account" | "studio", pushHistory: boolean = true) => {
+    setViewMode(mode);
+    if (typeof window !== "undefined") {
+      if (mode !== "studio") {
+        localStorage.setItem("antigravity_viewMode", mode);
+      }
+      if (pushHistory && window.location.hash !== `#${mode}`) {
+        window.history.pushState({ viewMode: mode }, "", `#${mode}`);
+      }
+    }
+  };
+
+  const clearStudioWorkspace = () => {
+    setImageId("");
+    setSceneGraph(null);
+    setSelectedObjectId(null);
+    setSelectedObjectIds([]);
+    setHoveredObjectId(null);
+    setHistoryStack([]);
+    setRedoStack([]);
+  };
+
+  const loadStudioProject = (id: string, nextRoomType?: string, nextDesignStyle?: string) => {
+    setImageId(id);
+    if (nextRoomType) setRoomType(nextRoomType);
+    if (nextDesignStyle) setDesignStyle(nextDesignStyle);
+    fetchSceneGraph(id);
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.set("image", id);
+      if (nextRoomType) url.searchParams.set("room", nextRoomType);
+      if (nextDesignStyle) url.searchParams.set("style", nextDesignStyle);
+      window.history.replaceState({ viewMode: "studio" }, "", `${url.pathname}${url.search}#studio`);
+    }
+  };
+
+  const openStudioWorkspace = (options?: {
+    imageId?: string;
+    roomType?: string;
+    designStyle?: string;
+  }) => {
+    if (typeof window === "undefined") return;
+
+    const nextRoomType = options?.roomType ?? roomType;
+    const nextDesignStyle = options?.designStyle ?? designStyle;
+
+    const params = new URLSearchParams();
+    if (options?.imageId) params.set("image", options.imageId);
+    params.set("room", nextRoomType);
+    params.set("style", nextDesignStyle);
+
+    const url = `${window.location.origin}${window.location.pathname}?${params.toString()}#studio`;
+    const opened = window.open(url, "_blank", "noopener,noreferrer");
+
+    if (!opened) {
+      showToast("Allow pop-ups to open the studio in a new tab.", "Navigation", "info");
+    } else {
+      showToast(
+        options?.imageId ? "Project opened in studio." : "Empty studio opened in a new tab.",
+        "Navigation",
+        "info"
+      );
+    }
+  };
+
+  const isStudio = viewMode === "studio";
+
+  useEffect(() => {
+    setMounted(true);
+    if (typeof window !== "undefined") {
+      const hash = window.location.hash.replace("#", "") as any;
+      if (["home", "about", "pricing", "projects", "account", "studio"].includes(hash)) {
+        setViewMode(hash);
+      }
+      const handlePopState = (e: PopStateEvent) => {
+        if (e.state && e.state.viewMode) {
+          setViewMode(e.state.viewMode);
+        } else {
+          const currentHash = window.location.hash.replace("#", "") as any;
+          if (["home", "about", "pricing", "projects", "account", "studio"].includes(currentHash)) {
+            setViewMode(currentHash);
+          }
+        }
+      };
+      window.addEventListener("popstate", handlePopState);
+      return () => window.removeEventListener("popstate", handlePopState);
+    }
+  }, []);
+
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null);
   const [selectedObjectIds, setSelectedObjectIds] = useState<string[]>([]);
   const [hoveredObjectId, setHoveredObjectId] = useState<string | null>(null);
@@ -104,7 +201,7 @@ export default function StudioPage() {
     setRedoStack(newRedo);
     setSceneGraph(previous);
     syncSceneGraphToDB(previous);
-    showToast("Undo (Ctrl+Z): Restored previous scene state.", "History OS", "info");
+    showToast("Undid last change.", "History", "info");
   };
 
   const handleRedo = () => {
@@ -120,7 +217,7 @@ export default function StudioPage() {
     setHistoryStack(newHistory);
     setSceneGraph(next);
     syncSceneGraphToDB(next);
-    showToast("Redo (Ctrl+Shift+Z): Re-applied scene state.", "History OS", "info");
+    showToast("Redid last change.", "History", "info");
   };
 
   useEffect(() => {
@@ -148,7 +245,7 @@ export default function StudioPage() {
     window.addEventListener("keydown", handleGlobalKeyDown, true);
     return () => window.removeEventListener("keydown", handleGlobalKeyDown, true);
   }, []);
-  
+
   // Interactive Room Function & Style Setup State
   const [showSetupModal, setShowSetupModal] = useState<boolean>(false);
   const [roomType, setRoomType] = useState<string>("Living Room");
@@ -165,36 +262,62 @@ export default function StudioPage() {
   const [isDraggingRight, setIsDraggingRight] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [imageId, setImageId] = useState("demo_render_01");
+  const [imageId, setImageId] = useState("");
   const [isInitialized, setIsInitialized] = useState(false);
 
   // Restore State from localStorage on Mount
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const savedImageId = localStorage.getItem("antigravity_imageId");
+      const hash = window.location.hash.replace("#", "");
+      const params = new URLSearchParams(window.location.search);
+      const launchImageId = params.get("image");
+      const launchRoom = params.get("room");
+      const launchStyle = params.get("style");
+
       const savedViewMode = localStorage.getItem("antigravity_viewMode") as "home" | "studio";
       const savedRoomType = localStorage.getItem("antigravity_roomType");
       const savedDesignStyle = localStorage.getItem("antigravity_designStyle");
       const savedLeftWidth = localStorage.getItem("antigravity_leftWidth");
       const savedRightWidth = localStorage.getItem("antigravity_rightWidth");
 
-      if (savedImageId) setImageId(savedImageId);
-      if (savedViewMode) setViewMode(savedViewMode);
-      if (savedRoomType) setRoomType(savedRoomType);
-      if (savedDesignStyle) setDesignStyle(savedDesignStyle);
+      if (hash === "studio" || launchImageId) {
+        setViewMode("studio");
+        if (launchImageId) {
+          setImageId(launchImageId);
+          fetchSceneGraph(launchImageId);
+        } else {
+          clearStudioWorkspace();
+          localStorage.removeItem("antigravity_imageId");
+        }
+      } else if (["home", "about", "pricing", "projects", "account"].includes(hash)) {
+        setViewMode(hash as typeof viewMode);
+      } else if (savedViewMode && savedViewMode !== "studio") {
+        setViewMode(savedViewMode);
+      }
+
+      if (launchRoom) setRoomType(launchRoom);
+      else if (savedRoomType) setRoomType(savedRoomType);
+
+      if (launchStyle) setDesignStyle(launchStyle);
+      else if (savedDesignStyle) setDesignStyle(savedDesignStyle);
+
       if (savedLeftWidth) setLeftWidth(parseInt(savedLeftWidth, 10));
       if (savedRightWidth) setRightWidth(parseInt(savedRightWidth, 10));
 
       setIsInitialized(true);
-      fetchSceneGraph(savedImageId || "demo_render_01");
     }
   }, []);
+
 
   // Synchronize State Updates to localStorage
   useEffect(() => {
     if (isInitialized && typeof window !== "undefined") {
-      localStorage.setItem("antigravity_imageId", imageId);
-      localStorage.setItem("antigravity_viewMode", viewMode);
+      if (viewMode === "studio" && imageId) {
+        localStorage.setItem("antigravity_imageId", imageId);
+      }
+      if (viewMode !== "studio") {
+        localStorage.setItem("antigravity_viewMode", viewMode);
+      }
       localStorage.setItem("antigravity_roomType", roomType);
       localStorage.setItem("antigravity_designStyle", designStyle);
       localStorage.setItem("antigravity_leftWidth", leftWidth.toString());
@@ -237,7 +360,13 @@ export default function StudioPage() {
   const fetchSceneGraph = async (id: string) => {
     try {
       const res = await fetch(`http://localhost:8000/api/v1/scene-graph/${id}`);
-      if (!res.ok) return;
+      if (!res.ok) {
+        if (res.status === 404) {
+          setImageId("");
+          setSceneGraph(null);
+        }
+        return;
+      }
       const data: SceneGraph = await res.json();
       setSceneGraph(data);
       if (data.room_type) setRoomType(data.room_type);
@@ -245,7 +374,7 @@ export default function StudioPage() {
 
       const validIds = new Set(data.objects.map(o => o.id));
       setSelectedObjectIds(prev => prev.filter(oid => validIds.has(oid)));
-      
+
       if (data.objects.length > 0 && !selectedObjectId) {
         setSelectedObjectId(data.objects[0].id);
         setSelectedObjectIds([data.objects[0].id]);
@@ -259,23 +388,68 @@ export default function StudioPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [activeUser, setActiveUser] = useState<User | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
+  const activeProject = imageId ? projects.find(p => p.image_id === imageId) : undefined;
+  const activeProjectTitle = activeProject?.title ?? (imageId ? "Untitled project" : "No project open");
+  const hasOpenProject = Boolean(sceneGraph);
+  const isLoadingProject = Boolean(imageId && !sceneGraph && !uploading);
+
+  const applyUserUpdate = (user: User) => {
+    setActiveUser(user);
+    setUsers((prev) => {
+      const exists = prev.some((u) => u.id === user.id);
+      return exists ? prev.map((u) => (u.id === user.id ? user : u)) : [...prev, user];
+    });
+    if (typeof window !== "undefined") {
+      localStorage.setItem("antigravity_userId", user.id);
+    }
+  };
 
   const fetchUsers = async () => {
     try {
-      const res = await fetch("http://localhost:8000/api/v1/users");
+      const res = await fetch(`${API_BASE}/api/v1/users`);
       if (res.ok) {
         const data: User[] = await res.json();
         setUsers(data);
-        if (data.length > 0) {
-          const savedUserId = typeof window !== "undefined" ? localStorage.getItem("antigravity_userId") : null;
-          const found = data.find(u => u.id === savedUserId) || data[0];
-          setActiveUser(found);
+      }
+      const savedUserId = typeof window !== "undefined" ? localStorage.getItem("antigravity_userId") : null;
+      if (savedUserId) {
+        const fresh = await fetchUserById(savedUserId);
+        if (fresh) {
+          applyUserUpdate(fresh);
+        } else if (typeof window !== "undefined") {
+          localStorage.removeItem("antigravity_userId");
+          setActiveUser(null);
         }
       }
     } catch (err) {
       console.error("Failed to fetch users:", err);
     }
   };
+
+  const handleUpgradePlan = async (planName: string): Promise<boolean> => {
+    if (!activeUser) return false;
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/users/${activeUser.id}/upgrade-plan`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan: planName }),
+      });
+      if (res.ok) {
+        const updated: User = await res.json();
+        applyUserUpdate(updated);
+        showToast(`You're now on ${planName}. Credits updated.`, "Billing", "success");
+        return true;
+      }
+      const data = await res.json().catch(() => ({}));
+      showToast(parseApiError(data, "Could not change plan."), "Billing", "info");
+      return false;
+    } catch (err) {
+      console.error("Upgrade error:", err);
+      showToast("Can't reach billing server.", "Billing", "info");
+      return false;
+    }
+  };
+
 
   const fetchUserProjects = async (userId: string) => {
     try {
@@ -295,29 +469,26 @@ export default function StudioPage() {
 
   useEffect(() => {
     if (activeUser) {
-      if (typeof window !== "undefined") {
-        localStorage.setItem("antigravity_userId", activeUser.id);
-      }
       fetchUserProjects(activeUser.id);
     }
   }, [activeUser?.id]);
 
   const handleSelectProject = (proj: Project) => {
-    setRoomType(proj.room_type);
-    setDesignStyle(proj.design_style);
-    setImageId(proj.image_id);
-    setSelectedObjectIds([]);
-    fetchSceneGraph(proj.image_id);
-    setViewMode("studio");
-    showToast(`Launched Studio for '${proj.title}'`, "Project OS", "info");
+    openStudioWorkspace({
+      imageId: proj.image_id,
+      roomType: proj.room_type,
+      designStyle: proj.design_style,
+    });
+    showToast(`Opened "${proj.title}" in studio`, "Projects", "info");
   };
 
   const handleDeleteProject = async (projectId: string) => {
     try {
-      const res = await fetch(`http://localhost:8000/api/v1/projects/${projectId}`, { method: "DELETE" });
+      const url = activeUser ? `http://localhost:8000/api/v1/projects/${projectId}?user_id=${activeUser.id}` : `http://localhost:8000/api/v1/projects/${projectId}`;
+      const res = await fetch(url, { method: "DELETE" });
       if (res.ok && activeUser) {
         fetchUserProjects(activeUser.id);
-        showToast("Deleted project from control panel.", "Projects OS", "info");
+        showToast("Project deleted.", "Projects", "info");
       }
     } catch (err) {
       console.error("Failed to delete project:", err);
@@ -326,25 +497,37 @@ export default function StudioPage() {
 
   const handleDuplicateProject = async (projectId: string) => {
     try {
-      const res = await fetch(`http://localhost:8000/api/v1/projects/${projectId}/duplicate`, { method: "POST" });
+      const url = activeUser ? `http://localhost:8000/api/v1/projects/${projectId}/duplicate?user_id=${activeUser.id}` : `http://localhost:8000/api/v1/projects/${projectId}/duplicate`;
+      const res = await fetch(url, { method: "POST" });
       if (res.ok && activeUser) {
         fetchUserProjects(activeUser.id);
-        showToast("Duplicated project in control panel.", "Projects OS", "success");
+        showToast("Project duplicated.", "Projects", "success");
       }
     } catch (err) {
       console.error("Failed to duplicate project:", err);
     }
   };
 
-  const handleLogOut = () => {
+
+  const handleLogOut = async () => {
+    try {
+      await fetch(`${API_BASE}/api/v1/auth/logout`, { method: "POST" });
+    } catch {
+      // ignore logout network errors
+    }
     if (typeof window !== "undefined") {
       localStorage.removeItem("antigravity_userId");
     }
     setActiveUser(null);
     setProjects([]);
-    showToast("Logged out of account session.", "Account System", "info");
+    setSceneGraph(null);
+    setImageId("");
+    setSelectedObjectIds([]);
+    navigateToPage("home");
+    showToast("Signed out.", "Account", "info");
     setShowAuthModal(true);
   };
+
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -366,28 +549,58 @@ export default function StudioPage() {
       });
       if (res.ok) {
         const data: SceneGraph = await res.json();
-        setSceneGraph(data);
-        setImageId(data.image_id);
-        if (data.objects.length > 0) {
-          setSelectedObjectId(data.objects[0].id);
-          setSelectedObjectIds([data.objects[0].id]);
-        }
         if (activeUser) {
           fetchUserProjects(activeUser.id);
         }
-        setViewMode("studio");
-        showToast(`Analyzed ${roomType} (${data.objects.length} high-confidence elements).`, `${designStyle}`, "success");
+        if (viewMode === "studio") {
+          loadStudioProject(data.image_id, roomType, designStyle);
+          setSceneGraph(data);
+          if (data.objects.length > 0) {
+            setSelectedObjectId(data.objects[0].id);
+            setSelectedObjectIds([data.objects[0].id]);
+          }
+        } else {
+          openStudioWorkspace({
+            imageId: data.image_id,
+            roomType,
+            designStyle,
+          });
+        }
+        showToast(`Found ${data.objects.length} items in your ${roomType} photo.`, `${designStyle}`, "success");
       }
     } catch (err) {
       console.error("File upload error:", err);
-      showToast("Analysis pipeline failed.", "API Error", "info");
+      showToast("Couldn't analyze your photo. Try again.", "Upload", "info");
     } finally {
       setUploading(false);
     }
   };
 
+  const recordEditTrial = async () => {
+    if (!activeUser) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/users/${activeUser.id}/record-edit`, { method: "POST" });
+      if (res.ok) {
+        const updatedUser: User = await res.json();
+        const prevCredits = activeUser.credits ?? 1000;
+        applyUserUpdate(updatedUser);
+        if (updatedUser.credits !== prevCredits) {
+          showToast(`Used 25 credits (10 AI edits). ${updatedUser.credits} credits left.`, "Credits", "info");
+        }
+      } else if (res.status === 402) {
+        const data = await res.json().catch(() => ({}));
+        showToast(parseApiError(data, "Not enough credits."), "Credits", "info");
+        navigateToPage("pricing");
+      }
+    } catch (err) {
+      console.error("Failed to record edit trial credits:", err);
+    }
+  };
+
   const handleOrchestratorSuccess = (res: OrchestratorResponse) => {
-    showToast(res.message, "Generative AI", "ai");
+    showToast(res.message, "AI Edit", "ai");
+    recordEditTrial();
+
 
     if ((res.updated_object || res.updated_image_url) && sceneGraph) {
       pushHistorySnapshot();
@@ -405,8 +618,9 @@ export default function StudioPage() {
     }
   };
 
+
   const handleClassUpdated = (updatedObj: SceneObject) => {
-    showToast(`Updated class to '${updatedObj.class}'. Model learned new taxonomy!`, "Active Learning", "success");
+    showToast(`Renamed to "${updatedObj.class}". We'll remember this next time.`, "Saved", "success");
     pushHistorySnapshot();
     setSceneGraph((prev) => {
       if (!prev) return prev;
@@ -425,7 +639,7 @@ export default function StudioPage() {
         method: "DELETE"
       });
       if (res.ok) {
-        showToast(`Deleted object from scene graph.`, "Scene Graph Engine", "info");
+        showToast("Item removed.", "Design", "info");
         if (selectedObjectId === deletedId) {
           setSelectedObjectId(null);
         }
@@ -478,7 +692,7 @@ export default function StudioPage() {
       });
       if (res.ok) {
         const data = await res.json();
-        showToast(data.message, "Object Merger Engine", "success");
+        showToast(data.message, "Design", "success");
         if (data.merged_object) {
           setSelectedObjectId(data.merged_object.id);
           setSelectedObjectIds([data.merged_object.id]);
@@ -510,7 +724,7 @@ export default function StudioPage() {
           setSelectedObjectId(data.new_object.id);
           setSelectedObjectIds([data.new_object.id]);
         }
-        showToast(`Added custom object '${className}' to scene graph.`, "Active AI Learning", "success");
+        showToast(`Added "${className}" to your design.`, "Design", "success");
       }
     } catch (err) {
       console.error("Failed to add custom object:", err);
@@ -540,7 +754,8 @@ export default function StudioPage() {
           setSelectedObjectId(data.new_object.id);
           setSelectedObjectIds([data.new_object.id]);
         }
-        showToast(data.message || `Applied AI region edit for '${objectName}'.`, "Gemini AI Engine", "success");
+        showToast(data.message || `AI edit applied to "${objectName}".`, "AI Edit", "success");
+        recordEditTrial();
       }
     } catch (err) {
       console.error("Failed to execute AI region edit:", err);
@@ -549,13 +764,58 @@ export default function StudioPage() {
     }
   };
 
+
+
+  const handleDownloadRender = async () => {
+    if (!activeUser) {
+      setShowAuthModal(true);
+      return;
+    }
+    try {
+      const res = await fetch(`http://localhost:8000/api/v1/users/${activeUser.id}/deduct-download`, { method: "POST" });
+      if (res.ok) {
+        const updatedUser: User = await res.json();
+        setActiveUser(updatedUser);
+        showToast(`Download used 50 credits. ${updatedUser.credits} left.`, "Download", "success");
+
+        // Trigger robust cross-origin browser blob download
+        const targetUrl = sceneGraph?.image_url || "http://localhost:8000/uploads/demo_render_01.jpg";
+        const imgRes = await fetch(targetUrl);
+        const blob = await imgRes.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = blobUrl;
+        a.download = `antigravity_render_${imageId || "design"}.jpg`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(blobUrl);
+      } else {
+        const errData = await res.json();
+        showToast(errData.detail || "Not enough credits (50 needed).", "Credits", "info");
+        setViewMode("pricing");
+      }
+    } catch (err) {
+      console.error("Download failed:", err);
+    }
+  };
+
+
+
   const selectedObject = sceneGraph?.objects.find((obj) => obj.id === selectedObjectId) || null;
 
+  const navLinkClass = (active: boolean) =>
+    `px-2 md:px-3 lg:px-4 py-1.5 lg:py-2 rounded-xl transition-all duration-200 flex items-center justify-center gap-1.5 lg:gap-2 active:scale-[0.97] shrink-0 ${
+      active
+        ? "bg-[#4F46E5] text-white border border-[#E2E8F0] font-bold shadow-sm"
+        : "text-[#64748B] hover:text-[#0F172A] hover:bg-slate-100"
+    }`;
+
   return (
-    <div className="w-screen h-screen flex flex-col bg-[#090a0f] text-slate-100 overflow-hidden select-none font-sans">
+    <div className="w-screen h-screen flex flex-col bg-background text-foreground overflow-hidden select-none font-sans">
       <ProgressLoader
         isLoading={uploading || isOrchestrating}
-        title={uploading ? `Analyzing ${roomType} Render...` : "Synthesizing AI Edit Instructions..."}
+        title={uploading ? `Analyzing your ${roomType} photo...` : "Applying your AI edit..."}
       />
 
       <input
@@ -567,155 +827,231 @@ export default function StudioPage() {
       />
 
       {/* Navigation & Context Selector Bar */}
-      <header className="h-14 bg-[#0c0e14]/95 border-b border-slate-800/80 px-5 flex items-center justify-between z-20 shrink-0 backdrop-blur-md">
-        <div className="flex items-center space-x-5">
+      <header
+        className={`bg-white border-b border-[#E2E8F0] z-20 shrink-0 w-full min-w-0 transition-all duration-200 ${
+          isStudio
+            ? "grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1 sm:gap-2 h-10 px-2 sm:px-3"
+            : "flex items-center gap-2 sm:gap-3 md:gap-4 h-14 sm:h-16 md:h-[4.75rem] lg:h-20 px-3 sm:px-4 md:px-6 lg:px-8"
+        }`}
+      >
+        <div className={`flex items-center min-w-0 ${
+          isStudio
+            ? "justify-self-start gap-2"
+            : "flex-1 gap-2 sm:gap-3 md:gap-4 lg:gap-6"
+        }`}>
           <button
             onClick={() => {
-              setViewMode("home");
-              showToast("Navigated to Home Landing Hub", "Studio Navigation", "info");
+              navigateToPage("home");
+              showToast("Opened home", "Navigation", "info");
             }}
-            className="flex items-center space-x-2.5 group focus:outline-none"
-            title="Return to Home Dashboard"
+            className="flex items-center gap-2 sm:gap-2.5 group focus:outline-none shrink-0"
+            title="Back to home"
           >
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-blue-600 to-cyan-400 flex items-center justify-center font-bold text-white text-xs shadow-md shadow-blue-500/20 group-hover:scale-105 transition-transform">
-              A
-            </div>
-            <span className="font-bold text-sm tracking-tight text-slate-100 group-hover:text-cyan-300 transition-colors">Antigravity</span>
+            <img
+              src="/logo.png"
+              alt="DesAIgn"
+              className={`rounded-lg shrink-0 ${isStudio ? "w-7 h-7" : "w-9 h-9 sm:w-10 sm:h-10 md:w-11 md:h-11 lg:w-12 lg:h-12"}`}
+            />
+            <span
+              className={`font-bold tracking-tight text-[#0F172A] group-hover:text-[#4F46E5] transition-colors font-display truncate ${
+                isStudio ? "text-xs hidden sm:inline max-w-[7rem]" : "text-sm sm:text-base md:text-lg hidden sm:inline max-w-[6rem] sm:max-w-none"
+              }`}
+            >
+              DesAIgn
+            </span>
           </button>
 
-          {/* High-Visibility Page Switching Pills */}
-          <div className="flex items-center space-x-1 bg-slate-950/90 p-1 rounded-xl border border-slate-800/80 font-mono text-xs shadow-inner">
+          {/* Full navigation — hidden in compact studio workspace */}
+          {!isStudio && (
+          <nav className="flex-1 min-w-0 overflow-x-auto scrollbar-none -mx-1 px-1">
+            <div className="flex items-center gap-1 sm:gap-1.5 bg-slate-50 p-1 sm:p-1.5 rounded-2xl border border-[#E2E8F0] font-mono text-sm shadow-sm w-max max-w-full">
             <button
               onClick={() => {
-                setViewMode("home");
-                showToast("Navigated to Home Landing Hub", "Studio Navigation", "info");
+                navigateToPage("home");
+                showToast("Opened home", "Navigation", "info");
               }}
-              className={`px-3 py-1 rounded-lg transition-all flex items-center space-x-1.5 ${
-                viewMode === "home"
-                  ? "bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-bold shadow-md shadow-cyan-500/25"
-                  : "text-slate-400 hover:text-slate-200"
-              }`}
+              className={navLinkClass(viewMode === "home")}
+              title="Home"
             >
-              <Home className="w-3.5 h-3.5" />
-              <span>Home</span>
+              <Home className="w-4 h-4 shrink-0" />
+              <span className="hidden md:inline">Home</span>
             </button>
-            <button
-              onClick={() => {
-                setViewMode("projects");
-                showToast("Navigated to Projects Portfolio", "Studio Navigation", "info");
-              }}
-              className={`px-3 py-1 rounded-lg transition-all flex items-center space-x-1.5 ${
-                viewMode === "projects"
-                  ? "bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-bold shadow-md shadow-cyan-500/25"
-                  : "text-slate-400 hover:text-slate-200"
-              }`}
-            >
-              <Folder className="w-3.5 h-3.5" />
-              <span>Projects</span>
-            </button>
-            <button
-              onClick={() => {
-                setViewMode("studio");
-                showToast(`Navigated to Studio Workspace (${roomType})`, "Studio Navigation", "info");
-              }}
-              className={`px-3 py-1 rounded-lg transition-all flex items-center space-x-1.5 ${
-                viewMode === "studio"
-                  ? "bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-bold shadow-md shadow-cyan-500/25"
-                  : "text-slate-400 hover:text-slate-200"
-              }`}
-            >
-              <Layers className="w-3.5 h-3.5" />
-              <span>Studio Workspace</span>
-            </button>
-          </div>
 
-          {viewMode === "studio" && (
             <button
-              onClick={() => setShowSetupModal(true)}
-              className="hidden md:flex items-center space-x-2 bg-slate-900/90 hover:bg-slate-800 border border-slate-700/70 px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-200 transition-all shadow-sm group"
+              onClick={() => {
+                navigateToPage("about");
+                showToast("Opened about page", "Navigation", "info");
+              }}
+              className={navLinkClass(viewMode === "about")}
+              title="About"
             >
-              <Sliders className="w-3.5 h-3.5 text-cyan-400 group-hover:rotate-45 transition-transform" />
-              <span>{roomType} • {designStyle}</span>
-              <span className="text-[10px] text-cyan-400 font-mono bg-cyan-950/80 px-1.5 py-0.5 rounded border border-cyan-800/60 ml-1">Setup</span>
+              <Info className="w-4 h-4 shrink-0" />
+              <span className="hidden md:inline">About</span>
             </button>
+
+            <button
+              onClick={() => {
+                navigateToPage("pricing");
+                showToast("Opened pricing", "Navigation", "info");
+              }}
+              className={navLinkClass(viewMode === "pricing")}
+              title="Pricing"
+            >
+              <Tag className="w-4 h-4 shrink-0" />
+              <span className="hidden md:inline">Pricing</span>
+            </button>
+
+            {mounted && activeUser && (
+              <>
+                <button
+                  onClick={() => {
+                    navigateToPage("projects");
+                    showToast("Opened projects", "Navigation", "info");
+                  }}
+                  className={navLinkClass(viewMode === "projects")}
+                  title="Projects"
+                >
+                  <Folder className="w-4 h-4 shrink-0" />
+                  <span className="hidden md:inline">Projects</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    openStudioWorkspace();
+                    showToast(`Opening studio (${roomType})`, "Navigation", "info");
+                  }}
+                  className={navLinkClass(false)}
+                  title="Open studio in a new tab"
+                >
+                  <Layers className="w-4 h-4 shrink-0" />
+                  <span className="hidden lg:inline">Studio</span>
+                </button>
+              </>
+            )}
+            </div>
+          </nav>
+          )}
+
+          {isStudio && (
+            <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#4F46E5] hidden sm:inline truncate">
+              Workspace
+            </span>
           )}
         </div>
 
-        {/* Minimal Actions */}
-        <div className="flex items-center space-x-2.5">
-          {notification && !uploading && !isOrchestrating && (
-            <div className="text-xs px-3 py-1 rounded-lg bg-slate-800/80 border border-slate-700 text-slate-300 flex items-center space-x-2 animate-fade-in font-mono">
-              <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-              <span>{notification.message}</span>
-            </div>
-          )}
+        {/* Center - Project details if in studio mode */}
+        {isStudio && (
+          <div className="hidden sm:flex items-center min-w-0 max-w-[min(42vw,16rem)] md:max-w-[min(40vw,20rem)] justify-self-center bg-white px-2 md:px-3 py-1 rounded-lg border border-[#E2E8F0] shadow-sm z-10">
+            <span className="text-[10px] font-bold text-[#0F172A] font-display truncate">{activeProjectTitle}</span>
+            <span className="h-3 w-[1px] bg-[#E2E8F0] shrink-0 mx-1.5 md:mx-2" />
+            <button
+              onClick={() => setShowSetupModal(true)}
+              className="text-[9px] text-[#64748B] hover:text-[#4F46E5] font-mono uppercase font-bold truncate min-w-0"
+              title={`${roomType} • ${designStyle}`}
+            >
+              <span className="truncate">{roomType} • {designStyle}</span>
+            </button>
+          </div>
+        )}
 
-          {viewMode === "studio" && (
+        {/* Right side actions */}
+        <div className={`flex items-center min-w-0 ${isStudio ? "justify-self-end gap-1 sm:gap-1.5" : "shrink-0 ml-auto gap-1.5 sm:gap-2 md:gap-3"}`}>
+          
+          {isStudio && (
             <>
               <button
                 onClick={() => setShowBBoxes(!showBBoxes)}
-                className={`px-2.5 py-1 rounded-lg text-xs font-mono transition-all border ${
-                  showBBoxes
-                    ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/40 font-medium"
-                    : "bg-slate-800/50 text-slate-400 border-slate-700/60 hover:text-slate-200"
-                }`}
-                title="Toggle Bounding Boxes"
+                className={`px-1.5 sm:px-2 py-0.5 rounded-md text-[9px] font-mono transition-all border shrink-0 ${showBBoxes
+                    ? "bg-[#4F46E5]/10 text-[#4F46E5] border-[#4F46E5] font-medium"
+                    : "bg-white text-[#64748B] border border-[#E2E8F0] hover:text-[#0F172A]"
+                  }`}
+                title={`Object outlines: ${showBBoxes ? "On" : "Off"}`}
               >
-                Boxes: {showBBoxes ? "ON" : "OFF"}
+                <Scan className="w-3 h-3 sm:hidden" />
+                <span className="hidden sm:inline">Outlines: {showBBoxes ? "On" : "Off"}</span>
               </button>
 
               <button
                 onClick={handleUndo}
-                disabled={historyStack.length === 0}
-                className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 rounded-lg transition-all disabled:opacity-30"
-                title="Undo Previous Action (Ctrl+Z / Cmd+Z)"
+                disabled={!hasOpenProject || historyStack.length === 0}
+                className="p-1 text-[#64748B] hover:text-[#4F46E5] hover:bg-slate-50 border border-transparent hover:border-[#E2E8F0] rounded-md transition-all disabled:opacity-30 shrink-0"
+                title="Undo (Ctrl+Z)"
               >
-                <Undo2 className="w-3.5 h-3.5" />
+                <Undo2 className="w-3 h-3" />
               </button>
 
               <button
                 onClick={handleRedo}
-                disabled={redoStack.length === 0}
-                className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 rounded-lg transition-all disabled:opacity-30"
-                title="Redo Next Action (Ctrl+Shift+Z / Cmd+Shift+Z)"
+                disabled={!hasOpenProject || redoStack.length === 0}
+                className="p-1 text-[#64748B] hover:text-[#4F46E5] hover:bg-slate-50 border border-transparent hover:border-[#E2E8F0] rounded-md transition-all disabled:opacity-30 shrink-0"
+                title="Redo (Ctrl+Shift+Z)"
               >
-                <Redo2 className="w-3.5 h-3.5" />
+                <Redo2 className="w-3 h-3" />
               </button>
 
               <button
                 onClick={() => fetchSceneGraph(imageId)}
-                className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 rounded-lg transition-all"
-                title="Refresh Scene Graph"
+                disabled={!hasOpenProject}
+                className="p-1 text-[#64748B] hover:text-[#4F46E5] hover:bg-slate-50 border border-transparent hover:border-[#E2E8F0] rounded-md transition-all disabled:opacity-30 shrink-0"
+                title="Refresh design"
               >
-                <RefreshCw className="w-3.5 h-3.5" />
+                <RefreshCw className="w-3 h-3" />
               </button>
+
+              <button
+                onClick={handleDownloadRender}
+                disabled={!hasOpenProject}
+                className="px-1.5 sm:px-2 py-1 bg-[#4F46E5] hover:bg-[#6366F1] text-white border-0 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all shadow-sm active:scale-95 disabled:opacity-40 shrink-0"
+                title="Download image (50 credits)"
+              >
+                <Download className="w-3 h-3 shrink-0" />
+                <span className="hidden xl:inline whitespace-nowrap">Download (50 credits)</span>
+                <span className="hidden md:inline xl:hidden">Save</span>
+              </button>
+
+              {activeUser && (
+                <div className="hidden xl:flex items-center space-x-1 px-2 py-1 bg-white border border-[#E2E8F0] rounded-lg text-[10px] font-mono text-[#64748B] shrink-0 whitespace-nowrap" title="AI edit counter">
+                  <Wand2 className="w-3 h-3 text-[#4F46E5]" />
+                  <span>Edits: <strong className="text-[#0F172A]">{activeUser.edit_count || 0}</strong></span>
+                </div>
+              )}
             </>
           )}
 
           {/* Active User Account Menu & Auth Manager */}
+          <ThemeToggle />
+
           <UserAccountMenu
             users={users}
             activeUser={activeUser}
             onSelectUser={(u) => {
-              setActiveUser(u);
-              showToast(`Switched active workspace user to ${u.name}`, "Account System", "info");
+              applyUserUpdate(u);
+              showToast(`Switched to ${u.name}`, "Account", "info");
             }}
             onLogOut={handleLogOut}
             onOpenAuthModal={() => setShowAuthModal(true)}
+            onOpenAccountPage={() => navigateToPage("account")}
           />
 
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading || isOrchestrating}
-            className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-medium flex items-center space-x-1.5 transition-all shadow-md shadow-blue-600/20 active:scale-95 disabled:opacity-50"
+            className={`bg-[#4F46E5] hover:bg-[#6366F1] text-white rounded-xl font-bold flex items-center border-0 transition-all shadow-md active:scale-95 disabled:opacity-50 shrink-0 ${
+              isStudio
+                ? "px-2 sm:px-2.5 py-1 text-[10px] gap-1"
+                : "px-2.5 sm:px-4 md:px-5 py-1.5 sm:py-2 md:py-2.5 text-xs sm:text-sm gap-1.5 sm:gap-2"
+            }`}
+            title={uploading ? "Analyzing..." : "Upload photo"}
           >
-            <Upload className="w-3.5 h-3.5" />
-            <span>{uploading ? `Analyzing ${roomType}...` : `Upload Render`}</span>
+            <Upload className={`shrink-0 ${isStudio ? "w-3 h-3" : "w-3.5 h-3.5 sm:w-4 sm:h-4"}`} />
+            <span className={isStudio ? "inline" : "hidden sm:inline"}>
+              {uploading ? "Analyzing..." : isStudio ? "Upload" : "Upload photo"}
+            </span>
           </button>
         </div>
       </header>
 
-      {/* View Mode Router: Home Landing vs Projects Portfolio vs Interactive Studio Workspace */}
+      {/* View Mode Router: Home vs About vs Pricing vs Projects vs Interactive Studio Workspace */}
       {viewMode === "home" ? (
         <HomePage
           activeUser={activeUser}
@@ -727,26 +1063,43 @@ export default function StudioPage() {
           selectedDesignStyle={designStyle}
           onOpenSetupModal={() => setShowSetupModal(true)}
         />
-      ) : !activeUser ? (
-        <div className="flex-1 flex flex-col items-center justify-center p-8 bg-[#07080c] text-center relative select-none font-sans overflow-hidden">
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[300px] bg-cyan-600/10 blur-[130px] rounded-full pointer-events-none" />
-          <div className="w-16 h-16 rounded-3xl bg-cyan-950 border border-cyan-500/60 flex items-center justify-center text-cyan-400 mb-5 shadow-2xl shadow-cyan-500/25 z-10">
-            <Lock className="w-8 h-8 animate-pulse text-cyan-400" />
+      ) : viewMode === "about" ? (
+        <AboutPage
+          onOpenStudio={() => {
+            if (activeUser) openStudioWorkspace();
+            else setShowAuthModal(true);
+          }}
+          onOpenPricing={() => navigateToPage("pricing")}
+        />
+      ) : viewMode === "pricing" ? (
+        <PricingPage
+          activeUser={activeUser}
+          onOpenAuthModal={() => setShowAuthModal(true)}
+          onUpgradePlan={handleUpgradePlan}
+        />
+      ) : (mounted && !activeUser) ? (
+
+
+        <div className="flex-1 flex flex-col items-center justify-center p-8 bg-[#FAFAF9] text-center relative select-none font-sans overflow-hidden">
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[300px] bg-[#4F46E5]/5 blur-[120px] rounded-full pointer-events-none" />
+          <div className="w-16 h-16 rounded-xl bg-white border border-[#E2E8F0] flex items-center justify-center mb-5 z-10 shadow-sm">
+            <Lock className="w-8 h-8 text-[#4F46E5]" />
           </div>
-          <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-100 uppercase tracking-tight z-10">
-            Workspace Inactive
+          <h2 className="text-2xl sm:text-3xl font-extrabold text-[#0F172A] uppercase tracking-tight z-10">
+            Sign in to continue
           </h2>
-          <p className="text-xs sm:text-sm text-slate-400 max-w-md mt-2.5 leading-relaxed font-sans z-10">
-            An authenticated studio account is required to activate spatial 3D rendering, scene graphs, and the projects control panel.
+          <p className="text-xs sm:text-sm text-[#64748B] max-w-md mt-2.5 leading-relaxed font-sans z-10">
+            Sign in to open the studio, save projects, and edit your designs.
           </p>
           <button
             onClick={() => setShowAuthModal(true)}
-            className="mt-6 px-6 py-3 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-extrabold rounded-2xl text-xs shadow-xl shadow-cyan-500/30 flex items-center space-x-2 transition-all active:scale-95 z-10"
+            className="mt-6 px-6 py-3 bg-[#4F46E5] hover:bg-[#6366F1] text-white border-0 font-extrabold rounded-xl text-xs flex items-center space-x-2 transition-all active:scale-95 z-10 shadow-lg shadow-[#4F46E5]/15"
           >
             <LogIn className="w-4 h-4" />
             <span>Sign In or Register to Unlock</span>
           </button>
         </div>
+
       ) : viewMode === "projects" ? (
         <ProjectsPage
           activeUser={activeUser}
@@ -756,6 +1109,15 @@ export default function StudioPage() {
           onDeleteProject={handleDeleteProject}
           onDuplicateProject={handleDuplicateProject}
           onOpenAuthModal={() => setShowAuthModal(true)}
+        />
+      ) : viewMode === "account" ? (
+        <AccountPage
+          activeUser={activeUser}
+          projects={projects}
+          onUpdateUser={applyUserUpdate}
+          onOpenAuthModal={() => setShowAuthModal(true)}
+          onLogOut={handleLogOut}
+          onNavigateToPricing={() => navigateToPage("pricing")}
         />
       ) : (
         <div className="flex-1 flex overflow-hidden relative">
@@ -773,33 +1135,65 @@ export default function StudioPage() {
           {/* Left Resizer Handle */}
           <div
             onMouseDown={() => setIsDraggingLeft(true)}
-            className="w-1.5 h-full cursor-col-resize bg-slate-800/40 hover:bg-cyan-500/50 active:bg-cyan-500 transition-colors shrink-0 z-30 flex items-center justify-center group"
+            className="w-1.5 h-full cursor-col-resize bg-transparent hover:bg-accent-cyan/10 transition-colors shrink-0 z-30 flex items-center justify-center group"
             title="Drag to resize left panel width"
           >
-            <div className="w-0.5 h-6 bg-slate-600 group-hover:bg-cyan-300 rounded" />
+            <div className="w-0.5 h-6 bg-transparent group-hover:bg-accent-cyan rounded" />
           </div>
 
-          <main className="flex-1 h-full relative">
-            <InteractiveCanvas
-              sceneGraph={sceneGraph}
-              selectedObjectId={selectedObjectId}
-              selectedObjectIds={selectedObjectIds}
-              hoveredObjectId={hoveredObjectId}
-              showBBoxes={showBBoxes}
-              onSelectObject={(id, isMulti = false) => handleToggleSelectObject(id, isMulti)}
-              onHoverObject={(id) => setHoveredObjectId(id)}
-              onAddCustomObject={handleAddCustomObject}
-              onAIEditRegion={handleAIEditRegion}
-            />
+          <main className="flex-1 h-full relative overflow-hidden bg-background">
+            {hasOpenProject ? (
+              <InteractiveCanvas
+                sceneGraph={sceneGraph}
+                selectedObjectId={selectedObjectId}
+                selectedObjectIds={selectedObjectIds}
+                hoveredObjectId={hoveredObjectId}
+                showBBoxes={showBBoxes}
+                onSelectObject={(id, isMulti = false) => handleToggleSelectObject(id, isMulti)}
+                onHoverObject={(id) => setHoveredObjectId(id)}
+                onAddCustomObject={handleAddCustomObject}
+                onAIEditRegion={handleAIEditRegion}
+              />
+            ) : isLoadingProject ? (
+              <div className="w-full h-full flex flex-col items-center justify-center bg-[#FAFAF9] text-muted-foreground font-mono text-xs space-y-3 select-none">
+                <Cpu className="w-5 h-5 text-cyan-400 animate-spin" />
+                <span>Loading your design...</span>
+              </div>
+            ) : (
+              <div className="w-full h-full flex flex-col items-center justify-center bg-[#FAFAF9] text-center px-6 select-none">
+                <div className="w-16 h-16 rounded-2xl bg-white border border-[#E2E8F0] flex items-center justify-center mb-5 shadow-sm">
+                  <Upload className="w-7 h-7 text-[#4F46E5]" />
+                </div>
+                <h2 className="text-lg font-bold text-[#0F172A]">Start a new design</h2>
+                <p className="text-sm text-[#64748B] max-w-sm mt-2 leading-relaxed">
+                  Upload a room photo to begin, or open an existing project from your projects list.
+                </p>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading}
+                  className="mt-6 px-5 py-2.5 bg-[#4F46E5] hover:bg-[#6366F1] text-white rounded-xl text-sm font-bold flex items-center space-x-2 transition-all shadow-md active:scale-95 disabled:opacity-50"
+                >
+                  <Upload className="w-4 h-4" />
+                  <span>{uploading ? "Analyzing..." : "Upload photo"}</span>
+                </button>
+              </div>
+            )}
+
+            {/* AI Scan line simulation on generation or upload */}
+            {(uploading || isOrchestrating) && (
+              <div className="absolute inset-0 pointer-events-none z-30">
+                <div className="w-full h-1/6 scan-line animate-scan absolute top-0" />
+              </div>
+            )}
           </main>
 
           {/* Right Resizer Handle */}
           <div
             onMouseDown={() => setIsDraggingRight(true)}
-            className="w-1.5 h-full cursor-col-resize bg-slate-800/40 hover:bg-cyan-500/50 active:bg-cyan-500 transition-colors shrink-0 z-30 flex items-center justify-center group"
+            className="w-1.5 h-full cursor-col-resize bg-transparent hover:bg-accent-cyan/10 transition-colors shrink-0 z-30 flex items-center justify-center group"
             title="Drag to resize right panel width"
           >
-            <div className="w-0.5 h-6 bg-slate-600 group-hover:bg-cyan-300 rounded" />
+            <div className="w-0.5 h-6 bg-transparent group-hover:bg-accent-cyan rounded" />
           </div>
 
           <Inspector
@@ -817,51 +1211,53 @@ export default function StudioPage() {
 
       {/* Interactive Room Function & Architectural Style Setup Modal */}
       {showSetupModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in select-none">
-          <div className="w-full max-w-3xl bg-[#0c0e14] border border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+        <div className="fixed inset-0 z-50 bg-[#0F172A]/30 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in select-none">
+          <div className="w-full max-w-3xl bg-white border border-[#E2E8F0] rounded-xl shadow-lg overflow-hidden flex flex-col max-h-[90vh]">
             {/* Modal Header */}
-            <div className="px-6 py-4 border-b border-slate-800/80 flex items-center justify-between bg-slate-900/50">
+            <div className="px-6 py-4 border-b border-[#E2E8F0] flex items-center justify-between bg-white">
               <div className="flex items-center space-x-3">
-                <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-cyan-400 flex items-center justify-center text-white font-bold shadow-md shadow-blue-500/20">
+                <div className="w-8 h-8 rounded-xl bg-white border border-[#E2E8F0] flex items-center justify-center text-[#4F46E5] shadow-sm">
                   <Sliders className="w-4 h-4" />
                 </div>
                 <div>
-                  <h2 className="text-sm font-bold text-slate-100">Architectural Scene Context Setup</h2>
-                  <p className="text-[11px] text-slate-400">Select room function & design style to tailor zero-shot vision detection.</p>
+                  <h2 className="text-sm font-bold text-[#0F172A]">Project setup</h2>
+                  <p className="text-[11px] text-[#64748B]">Choose the room type and style so we detect the right items.</p>
                 </div>
               </div>
               <button
                 onClick={() => setShowSetupModal(false)}
-                className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition-all"
+                className="p-1.5 text-[#64748B] hover:text-[#0F172A] hover:bg-slate-50 border border-transparent hover:border-[#E2E8F0] rounded-lg transition-all"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             {/* Modal Content Grid */}
-            <div className="p-6 overflow-y-auto space-y-6 flex-1 custom-scrollbar">
+            <div className="p-6 overflow-y-auto space-y-6 flex-1 custom-scrollbar font-sans">
               {/* Step 1: Select Room Function */}
               <div>
                 <div className="flex items-center space-x-2 mb-3">
-                  <span className="w-5 h-5 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center">1</span>
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">Select Room Function</h3>
+                  <span className="w-5 h-5 rounded-full bg-[#4F46E5]/10 border border-[#E2E8F0] text-[#4F46E5] text-[10px] font-bold flex items-center justify-center">1</span>
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-[#0F172A]">Choose room type</h3>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
                   {ROOM_OPTIONS.map((room) => {
                     const isSelected = roomType === room.id;
+                    const IconComp = room.icon;
                     return (
                       <button
                         key={room.id}
                         onClick={() => setRoomType(room.id)}
-                        className={`p-3 rounded-xl border text-left transition-all ${
-                          isSelected
-                            ? "bg-blue-600/20 border-blue-500/80 text-blue-200 shadow-lg shadow-blue-600/10 font-medium"
-                            : "bg-slate-900/60 border-slate-800 text-slate-300 hover:bg-slate-800/60 hover:border-slate-700"
-                        }`}
+                        className={`p-3.5 rounded-xl border text-left transition-all duration-200 active:scale-[0.97] ${isSelected
+                            ? "bg-slate-50 border-[#4F46E5] text-[#0F172A] font-semibold"
+                            : "bg-white border-[#E2E8F0] text-[#64748B] hover:bg-slate-50 hover:border-[#4F46E5]"
+                          }`}
                       >
-                        <div className="text-base mb-1">{room.icon}</div>
+                        <div className="p-2 rounded-lg bg-white border border-[#E2E8F0] w-fit mb-2 text-[#64748B]">
+                          <IconComp className="w-4 h-4" />
+                        </div>
                         <div className="text-xs font-semibold">{room.label}</div>
-                        <div className="text-[10px] text-slate-500 leading-tight mt-1 truncate">{room.desc}</div>
+                        <div className="text-[10px] text-[#64748B]/75 leading-tight mt-1 truncate">{room.desc}</div>
                       </button>
                     );
                   })}
@@ -871,8 +1267,8 @@ export default function StudioPage() {
               {/* Step 2: Select Architectural Style */}
               <div>
                 <div className="flex items-center space-x-2 mb-3">
-                  <span className="w-5 h-5 rounded-full bg-cyan-600 text-white text-[10px] font-bold flex items-center justify-center">2</span>
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">Select Architectural Style</h3>
+                  <span className="w-5 h-5 rounded-full bg-[#4F46E5]/10 border border-[#E2E8F0] text-[#4F46E5] text-[10px] font-bold flex items-center justify-center">2</span>
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-[#0F172A]">Choose design style</h3>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
                   {STYLE_OPTIONS.map((style) => {
@@ -881,14 +1277,13 @@ export default function StudioPage() {
                       <button
                         key={style.id}
                         onClick={() => setDesignStyle(style.id)}
-                        className={`p-3 rounded-xl border text-left transition-all ${
-                          isSelected
-                            ? "bg-cyan-600/20 border-cyan-500/80 text-cyan-200 shadow-lg shadow-cyan-600/10 font-medium"
-                            : "bg-slate-900/60 border-slate-800 text-slate-300 hover:bg-slate-800/60 hover:border-slate-700"
-                        }`}
+                        className={`p-3 rounded-xl border text-left transition-all ${isSelected
+                            ? "bg-slate-50 border-[#4F46E5] text-[#0F172A] font-semibold"
+                            : "bg-white border-[#E2E8F0] text-[#64748B] hover:bg-slate-50 hover:border-[#4F46E5]"
+                          }`}
                       >
                         <div className="text-xs font-semibold">{style.label}</div>
-                        <div className="text-[10px] text-slate-500 leading-tight mt-1 line-clamp-2">{style.desc}</div>
+                        <div className="text-[10px] text-[#64748B]/75 leading-tight mt-1 line-clamp-2">{style.desc}</div>
                       </button>
                     );
                   })}
@@ -897,18 +1292,18 @@ export default function StudioPage() {
             </div>
 
             {/* Modal Footer Actions */}
-            <div className="px-6 py-4 border-t border-slate-800/80 bg-slate-900/60 flex items-center justify-between">
-              <div className="text-xs text-slate-400 font-mono">
-                Active: <span className="text-cyan-300 font-semibold">{roomType}</span> • <span className="text-blue-300 font-semibold">{designStyle}</span>
+            <div className="px-6 py-4 border-t border-[#E2E8F0] bg-slate-50 flex items-center justify-between">
+              <div className="text-xs text-[#64748B] font-mono">
+                Active: <span className="text-[#0F172A] font-semibold">{roomType}</span> • <span className="text-[#0F172A] font-semibold">{designStyle}</span>
               </div>
               <button
                 onClick={() => {
                   setShowSetupModal(false);
                   fileInputRef.current?.click();
                 }}
-                className="px-4 py-2 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white rounded-xl text-xs font-semibold flex items-center space-x-2 shadow-lg shadow-blue-600/25 active:scale-95 transition-all"
+                className="px-4 py-2 bg-[#4F46E5] hover:bg-[#6366F1] text-white border-0 rounded-xl text-xs font-semibold flex items-center space-x-2 transition-all active:scale-95 shadow-md shadow-[#4F46E5]/15"
               >
-                <span>Upload & Analyze Render</span>
+                <span>Upload & analyze photo</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
             </div>
@@ -921,10 +1316,11 @@ export default function StudioPage() {
         isOpen={showAuthModal}
         onClose={() => setShowAuthModal(false)}
         onSuccess={(u) => {
-          setActiveUser(u);
+          applyUserUpdate(u);
           fetchUsers();
-          showToast(`Welcome back, ${u.name}! Signed into workspace.`, "Auth Manager", "success");
+          showToast(`Welcome, ${u.name}!`, "Account", "success");
         }}
+
       />
     </div>
   );

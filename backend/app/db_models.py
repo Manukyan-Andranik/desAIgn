@@ -11,7 +11,11 @@ class UserRecord(Base):
     email = Column(String, nullable=False)
     password_hash = Column(String, nullable=True)
     avatar = Column(String, nullable=True)
+    credits = Column(Integer, default=1000)
+    edit_count = Column(Integer, default=0)
+    plan = Column(String, default="Standard")
     created_at = Column(DateTime, default=datetime.utcnow)
+
 
     projects = relationship("ProjectRecord", back_populates="user", cascade="all, delete-orphan")
 

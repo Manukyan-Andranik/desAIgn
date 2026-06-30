@@ -236,7 +236,8 @@ class GenerativeEngineProvider:
             f"INTERIOR VISUALIZER REDESIGN TASK:\n"
             f"Target Element: {target_object.object_class} (ID: {target_object.id}) at region {bbox_str}.\n"
             f"Designer Instruction: {prompt_text}.\n"
-            f"Material Specification: {action.material or 'custom design'}."
+            f"Material Specification: {action.material or 'custom design'}.\n"
+            f"Output must be photorealistic only — no selection outlines, borders, mask highlights, or debug overlays."
         )
 
         log_action("GENERATIVE_INPAINT_START", f"Target: '{target_object.id}' ({target_object.object_class}) | Prompt: '{prompt_text}'")
@@ -318,6 +319,16 @@ class GenerativeEngineProvider:
                     if target_object.polygon and len(target_object.polygon) >= 3:
                         pts = np.array([[int(pt.x), int(pt.y)] for pt in target_object.polygon], dtype=np.int32)
                         cv2.fillPoly(mask, [pts], 255)
+                    elif (
+                        target_object.segmentation
+                        and target_object.segmentation.points
+                        and len(target_object.segmentation.points) >= 3
+                    ):
+                        pts = np.array(
+                            [[int(p[0]), int(p[1])] for p in target_object.segmentation.points],
+                            dtype=np.int32,
+                        )
+                        cv2.fillPoly(mask, [pts], 255)
                     elif target_object.bbox:
                         x1, y1, x2, y2 = target_object.bbox
                         cv2.rectangle(mask, (int(x1), int(y1)), (int(x2), int(y2)), 255, -1)
@@ -368,10 +379,6 @@ class GenerativeEngineProvider:
                     else:
                         boosted = cv2.convertScaleAbs(img, alpha=1.25, beta=10)
                         edited_img[mask > 0] = cv2.addWeighted(img[mask > 0], 0.35, boosted[mask > 0], 0.65, 0)
-
-                    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-                    if contours:
-                        cv2.drawContours(edited_img, contours, -1, (245, 158, 11), 2)
 
                     cv2.imwrite(out_filepath, edited_img)
                     image_updated = True

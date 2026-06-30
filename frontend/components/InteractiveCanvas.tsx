@@ -312,27 +312,27 @@ export default function InteractiveCanvas({
   }
 
   return (
-    <div id="canvas-container" className="w-full h-full relative bg-[#07080c] flex items-center justify-center overflow-hidden font-sans">
+    <div id="canvas-container" className="w-full h-full relative bg-[#FAFAF9] flex items-center justify-center overflow-hidden font-sans border-r border-[#E2E8F0] shadow-inner">
       
       {/* Active Polygon Live Control Bar overlay when placing points */}
       {activeTool === "polygon" && polygonPoints.length > 0 && (
-        <div className="absolute top-6 left-1/2 -translate-x-1/2 z-30 flex items-center space-x-3 px-4 py-2 bg-slate-950/90 border border-cyan-500/60 rounded-2xl shadow-2xl backdrop-blur-xl animate-fade-in">
-          <div className="flex items-center space-x-2 text-xs font-mono text-cyan-300">
-            <Waypoints className="w-4 h-4 text-cyan-400 animate-pulse" />
+        <div className="absolute top-6 left-1/2 -translate-x-1/2 z-30 flex items-center space-x-3 px-4 py-2 bg-white/95 border border-[#E2E8F0] rounded-2xl shadow-xl backdrop-blur-md animate-fade-in">
+          <div className="flex items-center space-x-2 text-xs font-mono text-[#4F46E5]">
+            <Waypoints className="w-4 h-4 text-[#4F46E5] animate-pulse" />
             <span>Polygon Points: <strong>{polygonPoints.length}</strong></span>
           </div>
-          <div className="h-4 w-[1px] bg-slate-800" />
+          <div className="h-4 w-[1px] bg-[#E2E8F0]" />
           <button
             onClick={() => setPolygonPoints((prev) => prev.slice(0, prev.length - 1))}
-            className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold flex items-center space-x-1 transition-all"
-            title="Undo Last Vertex Point (Ctrl+Z)"
+            className="px-2.5 py-1 rounded-lg bg-slate-50 hover:bg-slate-100 text-[#64748B] border border-[#E2E8F0] text-xs font-semibold flex items-center space-x-1 transition-all"
+            title="Undo last point (Ctrl+Z)"
           >
-            <RotateCcw className="w-3 h-3 text-cyan-400" />
+            <RotateCcw className="w-3 h-3 text-[#4F46E5]" />
             <span>Undo Point</span>
           </button>
           <button
             onClick={() => setPolygonPoints([])}
-            className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold flex items-center space-x-1 transition-all"
+            className="px-2.5 py-1 rounded-lg bg-slate-50 hover:bg-slate-100 text-[#64748B] border border-[#E2E8F0] text-xs font-semibold flex items-center space-x-1 transition-all"
           >
             <X className="w-3 h-3" />
             <span>Clear</span>
@@ -342,7 +342,7 @@ export default function InteractiveCanvas({
               if (polygonPoints.length >= 3) setShowSelectionModal(true);
             }}
             disabled={polygonPoints.length < 3}
-            className="px-3 py-1 rounded-lg bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white text-xs font-bold flex items-center space-x-1.5 shadow-md shadow-cyan-500/25 transition-all disabled:opacity-50"
+            className="px-3 py-1.5 rounded-lg bg-[#4F46E5] hover:bg-[#6366F1] text-white text-xs font-bold flex items-center space-x-1.5 shadow-md shadow-[#4F46E5]/15 transition-all disabled:opacity-50 border-0"
           >
             <Check className="w-3.5 h-3.5" />
             <span>Complete Selection</span>
@@ -351,10 +351,10 @@ export default function InteractiveCanvas({
       )}
 
       {/* Floating Canvas Controls Toolbar */}
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center space-x-2 p-1.5 glass-panel rounded-2xl border border-slate-700/60 shadow-2xl shadow-black/80 backdrop-blur-xl">
+      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center space-x-2 p-1.5 bg-white/95 rounded-2xl border border-[#E2E8F0] shadow-xl backdrop-blur-md animate-fade-in">
         
         {/* Tool Mode Toggles */}
-        <div className="flex items-center space-x-1 bg-slate-950/80 p-1 rounded-xl border border-slate-800">
+        <div className="flex items-center space-x-1 bg-slate-50 p-1 rounded-xl border border-[#E2E8F0]">
           <button
             onClick={() => {
               setActiveTool("select");
@@ -363,12 +363,12 @@ export default function InteractiveCanvas({
               setRectCurrentPos(null);
               setPolygonPoints([]);
             }}
-            className={`px-3 py-1.5 rounded-lg text-xs font-mono transition-all flex items-center space-x-1.5 ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-mono transition-all duration-200 flex items-center space-x-1.5 active:scale-[0.97] border-0 ${
               activeTool === "select"
-                ? "bg-cyan-500 text-black font-bold shadow-md shadow-cyan-500/20"
-                : "text-slate-400 hover:text-slate-200"
+                ? "bg-[#4F46E5] text-white font-bold shadow-md shadow-[#4F46E5]/15"
+                : "text-[#64748B] hover:text-[#0F172A] hover:bg-slate-100 bg-transparent"
             }`}
-            title="Pointer Selection Mode"
+            title="Select tool"
           >
             <MousePointer className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Select</span>
@@ -381,15 +381,15 @@ export default function InteractiveCanvas({
               setRectCurrentPos(null);
               setPolygonPoints([]);
             }}
-            className={`px-3 py-1.5 rounded-lg text-xs font-mono transition-all flex items-center space-x-1.5 ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-mono transition-all duration-200 flex items-center space-x-1.5 active:scale-[0.97] border-0 ${
               activeTool === "brush"
-                ? "bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-bold shadow-md shadow-cyan-500/25"
-                : "text-slate-400 hover:text-slate-200"
+                ? "bg-[#4F46E5] text-white font-bold shadow-md shadow-[#4F46E5]/15"
+                : "text-[#64748B] hover:text-[#0F172A] hover:bg-slate-100 bg-transparent"
             }`}
-            title="Brush Freehand Area Mode"
+            title="Draw freehand"
           >
             <Paintbrush className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Brush Area</span>
+            <span className="hidden sm:inline">Draw</span>
           </button>
 
           <button
@@ -398,15 +398,15 @@ export default function InteractiveCanvas({
               setStrokePoints([]);
               setPolygonPoints([]);
             }}
-            className={`px-3 py-1.5 rounded-lg text-xs font-mono transition-all flex items-center space-x-1.5 ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-mono transition-all duration-200 flex items-center space-x-1.5 active:scale-[0.97] border-0 ${
               activeTool === "rectangle"
-                ? "bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-bold shadow-md shadow-cyan-500/25"
-                : "text-slate-400 hover:text-slate-200"
+                ? "bg-[#4F46E5] text-white font-bold shadow-md shadow-[#4F46E5]/15"
+                : "text-[#64748B] hover:text-[#0F172A] hover:bg-slate-100 bg-transparent"
             }`}
-            title="Rectangle Box Area Selection Mode"
+            title="Draw a box"
           >
             <Square className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Rectangle Box</span>
+            <span className="hidden sm:inline">Box</span>
           </button>
 
           <button
@@ -416,41 +416,41 @@ export default function InteractiveCanvas({
               setRectStartPos(null);
               setRectCurrentPos(null);
             }}
-            className={`px-3 py-1.5 rounded-lg text-xs font-mono transition-all flex items-center space-x-1.5 ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-mono transition-all duration-200 flex items-center space-x-1.5 active:scale-[0.97] border-0 ${
               activeTool === "polygon"
-                ? "bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-bold shadow-md shadow-cyan-500/25"
-                : "text-slate-400 hover:text-slate-200"
+                ? "bg-[#4F46E5] text-white font-bold shadow-md shadow-[#4F46E5]/15"
+                : "text-[#64748B] hover:text-[#0F172A] hover:bg-slate-100 bg-transparent"
             }`}
-            title="Point-by-Point Straight Line Polygon Selection Mode"
+            title="Click points to draw a shape"
           >
             <Waypoints className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Polygon Area</span>
+            <span className="hidden sm:inline">Polygon</span>
           </button>
         </div>
 
-        <span className="h-4 w-[1px] bg-slate-800" />
+        <span className="h-4 w-[1px] bg-[#E2E8F0]" />
 
         {/* Zoom Controls */}
         <button
           onClick={() => setZoomScale((prev) => Math.min(prev * 1.2, 5.0))}
-          className="p-2 text-slate-300 hover:text-white hover:bg-slate-800/80 rounded-xl transition-all"
+          className="p-2 text-[#64748B] hover:text-[#0F172A] hover:bg-slate-100 rounded-xl transition-all duration-200 border-0 bg-transparent"
           title="Zoom In"
         >
           <ZoomIn className="w-4 h-4" />
         </button>
         <button
           onClick={() => setZoomScale((prev) => Math.max(prev / 1.2, 0.5))}
-          className="p-2 text-slate-300 hover:text-white hover:bg-slate-800/80 rounded-xl transition-all"
+          className="p-2 text-[#64748B] hover:text-[#0F172A] hover:bg-slate-100 rounded-xl transition-all duration-200 border-0 bg-transparent"
           title="Zoom Out"
         >
           <ZoomOut className="w-4 h-4" />
         </button>
-        <span className="text-[11px] font-mono px-2 text-slate-400">
+        <span className="text-[11px] font-mono px-2 text-[#64748B]">
           {Math.round(zoomScale * 100)}%
         </span>
         <button
           onClick={handleResetZoom}
-          className="px-3 py-1.5 text-xs font-mono text-slate-300 hover:text-white hover:bg-slate-800/80 rounded-xl transition-all flex items-center gap-1.5"
+          className="px-3 py-1.5 text-xs font-mono text-[#64748B] hover:text-[#0F172A] hover:bg-slate-100 rounded-xl transition-all duration-200 flex items-center gap-1.5 border-0 bg-transparent"
           title="Reset Zoom & Pan"
         >
           <Maximize2 className="w-3.5 h-3.5" />
@@ -460,13 +460,13 @@ export default function InteractiveCanvas({
 
       {/* Dual Action Selection Modal (Define Object OR Call Gemini AI) */}
       {showSelectionModal && currentSelection && (
-        <div className="absolute inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
-          <div className="w-full max-w-md bg-[#0c0e14] border border-cyan-500/60 rounded-3xl p-6 shadow-2xl space-y-5">
+        <div className="absolute inset-0 z-50 bg-[#0F172A]/30 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in" onClick={handleClearSelectionState}>
+          <div className="w-full max-w-md bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xl space-y-5 animate-scale-in" onClick={e => e.stopPropagation()}>
             
             {/* Header */}
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2.5">
-                <div className="w-10 h-10 rounded-2xl bg-cyan-950 border border-cyan-500/50 flex items-center justify-center text-cyan-400 shadow-lg">
+                <div className="w-10 h-10 rounded-xl bg-[#4F46E5]/10 text-[#4F46E5] border border-[#E2E8F0] flex items-center justify-center shadow-sm">
                   {activeTool === "brush" ? (
                     <Paintbrush className="w-5 h-5 animate-pulse" />
                   ) : activeTool === "rectangle" ? (
@@ -476,17 +476,17 @@ export default function InteractiveCanvas({
                   )}
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wide">
-                    {activeTool === "brush" ? "Brush Region Selected" : activeTool === "rectangle" ? "Rectangle Region Selected" : "Point-by-Point Polygon Selected"}
+                  <h3 className="text-sm font-bold text-[#0F172A] uppercase tracking-wide">
+                    {activeTool === "brush" ? "Area selected" : activeTool === "rectangle" ? "Area selected" : "Area selected"}
                   </h3>
-                  <p className="text-[11px] text-slate-400 font-mono">
-                    BBox: [{currentSelection.bbox.join(", ")}]
+                  <p className="text-[11px] text-[#64748B] font-mono">
+                    Area selected
                   </p>
                 </div>
               </div>
               <button
                 onClick={handleClearSelectionState}
-                className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800/80 rounded-xl transition-all"
+                className="p-1.5 text-[#64748B] hover:text-[#0F172A] hover:bg-slate-50 border border-transparent hover:border-[#E2E8F0] rounded-xl transition-all"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -494,71 +494,71 @@ export default function InteractiveCanvas({
 
             {/* Common Object Name Input */}
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center space-x-1">
-                <span>Selected Object Name / Category</span>
-                <span className="text-cyan-400">*</span>
+              <label className="text-xs font-bold text-[#64748B] uppercase tracking-wider flex items-center space-x-1">
+                <span>What is this?</span>
+                <span className="text-red-500">*</span>
               </label>
               <input
                 type="text"
                 value={customClassName}
                 onChange={(e) => setCustomClassName(e.target.value)}
                 placeholder="e.g. Armchair, Vintage Lamp, Marble Coffee Table"
-                className="w-full bg-slate-950 border border-slate-700 focus:border-cyan-500 rounded-xl px-3.5 py-2 text-xs text-cyan-200 placeholder-slate-500 focus:outline-none font-sans shadow-inner"
+                className="w-full bg-white border border-[#E2E8F0] focus:border-[#4F46E5] focus:ring-1 focus:ring-[#4F46E5] rounded-xl px-3.5 py-2 text-xs text-[#0F172A] placeholder-[#64748B]/50 focus:outline-none font-sans shadow-inner"
                 autoFocus
               />
             </div>
 
             {/* Choice Tabs */}
-            <div className="grid grid-cols-2 gap-2 bg-slate-950 p-1 rounded-2xl border border-slate-800/80">
+            <div className="grid grid-cols-2 gap-2 bg-slate-50 p-1 rounded-2xl border border-[#E2E8F0]">
               <button
                 type="button"
                 onClick={() => setActionTab("define")}
-                className={`py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center space-x-1.5 ${
+                className={`py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center space-x-1.5 border-0 ${
                   actionTab === "define"
-                    ? "bg-slate-800 text-cyan-300 border border-slate-700 shadow-md"
-                    : "text-slate-400 hover:text-slate-200"
+                    ? "bg-white text-[#4F46E5] shadow-sm font-bold border border-[#E2E8F0]"
+                    : "text-[#64748B] hover:text-[#0F172A] bg-transparent"
                 }`}
               >
-                <Layers className="w-3.5 h-3.5 text-cyan-400" />
-                <span>Save Scene Object</span>
+                <Layers className="w-3.5 h-3.5 text-[#4F46E5]" />
+                <span>Save to design</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setActionTab("ai")}
-                className={`py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center space-x-1.5 ${
+                className={`py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center space-x-1.5 border-0 ${
                   actionTab === "ai"
-                    ? "bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-md shadow-cyan-500/20"
-                    : "text-slate-400 hover:text-slate-200"
+                    ? "bg-[#4F46E5] text-white shadow-md shadow-[#4F46E5]/15"
+                    : "text-[#64748B] hover:text-[#0F172A] bg-transparent"
                 }`}
               >
                 <Wand2 className="w-3.5 h-3.5" />
-                <span>Call Gemini AI</span>
+                <span>Edit with AI</span>
               </button>
             </div>
 
             {/* Tab 1: Define Scene Object Form */}
             {actionTab === "define" && (
               <form onSubmit={handleDefineObjectSubmit} className="space-y-4 pt-1">
-                <p className="text-xs text-slate-400 leading-relaxed bg-slate-900/60 p-3 rounded-xl border border-slate-800/80 font-sans">
-                  Register this selected region as a persistent interactive layer in your scene graph without running AI generation.
+                <p className="text-xs text-[#64748B] leading-relaxed bg-slate-50 p-3 rounded-xl border border-[#E2E8F0] font-sans">
+                  Save this area as an item you can edit later — no AI change yet.
                 </p>
 
                 <div className="flex items-center space-x-2">
                   <button
                     type="button"
                     onClick={handleClearSelectionState}
-                    className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition-all"
+                    className="flex-1 py-2.5 bg-transparent hover:bg-slate-50 border border-[#E2E8F0] text-[#0F172A] rounded-xl text-xs font-semibold transition-all"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={isSubmitting || !customClassName.trim()}
-                    className="flex-1 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-xl text-xs flex items-center justify-center space-x-1.5 shadow-lg shadow-cyan-600/25 transition-all disabled:opacity-50"
+                    className="flex-1 py-2.5 bg-[#4F46E5] hover:bg-[#6366F1] text-white font-bold rounded-xl text-xs flex items-center justify-center space-x-1.5 shadow-lg shadow-[#4F46E5]/15 transition-all disabled:opacity-50 border-0"
                   >
                     <Check className="w-4 h-4" />
-                    <span>Register Layer</span>
+                    <span>Save item</span>
                   </button>
                 </div>
               </form>
@@ -568,16 +568,16 @@ export default function InteractiveCanvas({
             {actionTab === "ai" && (
               <form onSubmit={handleAIEditSubmit} className="space-y-4 pt-1">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center space-x-1">
-                    <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-                    <span>Gemini Generative Edit Prompt</span>
+                  <label className="text-xs font-bold text-[#64748B] uppercase tracking-wider flex items-center space-x-1">
+                    <Sparkles className="w-3.5 h-3.5 text-[#4F46E5]" />
+                    <span>Describe the change</span>
                   </label>
                   <textarea
                     rows={3}
                     value={aiPrompt}
                     onChange={(e) => setAiPrompt(e.target.value)}
                     placeholder="e.g. Replace this selected object with a luxury cognac leather armchair with brushed brass legs"
-                    className="w-full bg-slate-950 border border-slate-700 focus:border-cyan-500 rounded-xl p-3 text-xs text-slate-200 placeholder-slate-500 focus:outline-none font-sans shadow-inner resize-none"
+                    className="w-full bg-white border border-[#E2E8F0] focus:border-[#4F46E5] focus:ring-1 focus:ring-[#4F46E5] rounded-xl p-3 text-xs text-[#0F172A] placeholder-[#64748B]/50 focus:outline-none font-sans shadow-inner resize-none"
                   />
                 </div>
 
@@ -585,17 +585,17 @@ export default function InteractiveCanvas({
                   <button
                     type="button"
                     onClick={handleClearSelectionState}
-                    className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition-all"
+                    className="flex-1 py-2.5 bg-transparent hover:bg-slate-50 border border-[#E2E8F0] text-[#0F172A] rounded-xl text-xs font-semibold transition-all"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={isSubmitting || !customClassName.trim() || !aiPrompt.trim()}
-                    className="flex-1 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold rounded-xl text-xs flex items-center justify-center space-x-1.5 shadow-lg shadow-cyan-500/25 transition-all disabled:opacity-50"
+                    className="flex-1 py-2.5 bg-[#4F46E5] hover:bg-[#6366F1] text-white font-bold rounded-xl text-xs flex items-center justify-center space-x-1.5 shadow-lg shadow-[#4F46E5]/15 transition-all disabled:opacity-50 border-0"
                   >
                     <Wand2 className="w-4 h-4" />
-                    <span>Generate with AI</span>
+                    <span>Apply with AI</span>
                   </button>
                 </div>
               </form>
@@ -652,20 +652,20 @@ export default function InteractiveCanvas({
                     tension={isOrganic ? 0.35 : 0.05}
                     fill={
                       isSelected
-                        ? "rgba(59, 130, 246, 0.45)"
+                        ? "rgba(79, 70, 229, 0.35)"
                         : isHovered
-                        ? "rgba(6, 182, 212, 0.40)"
+                        ? "rgba(14, 165, 233, 0.25)"
                         : "rgba(0, 0, 0, 0)"
                     }
                     stroke={
                       isSelected 
-                        ? "#3b82f6" 
+                        ? "#4F46E5" 
                         : isHovered 
-                        ? "#06b6d4" 
+                        ? "#0EA5E9" 
                         : "rgba(0, 0, 0, 0)"
                     }
                     strokeWidth={isSelected ? 3.5 / totalScale : isHovered ? 2.5 / totalScale : 0}
-                    shadowColor={isHovered ? "#06b6d4" : isSelected ? "#3b82f6" : undefined}
+                    shadowColor={isHovered ? "#0EA5E9" : isSelected ? "#4F46E5" : undefined}
                     shadowBlur={isHovered || isSelected ? 12 : 0}
                     shadowOpacity={isHovered || isSelected ? 0.8 : 0}
                     onMouseEnter={() => activeTool === "select" && onHoverObject(obj.id)}
@@ -687,10 +687,10 @@ export default function InteractiveCanvas({
                       y={obj.bbox[1]}
                       width={obj.bbox[2] - obj.bbox[0]}
                       height={obj.bbox[3] - obj.bbox[1]}
-                      stroke={isSelected ? "#3b82f6" : isHovered ? "#06b6d4" : "rgba(6, 182, 212, 0.7)"}
+                      stroke={isSelected ? "#4F46E5" : isHovered ? "#0EA5E9" : "rgba(79, 70, 229, 0.4)"}
                       strokeWidth={isSelected ? 2.5 / totalScale : 1.5 / totalScale}
                       dash={isSelected || isHovered ? [] : [6, 4]}
-                      fill={isSelected ? "rgba(59, 130, 246, 0.15)" : isHovered ? "rgba(6, 182, 212, 0.15)" : "rgba(6, 182, 212, 0.05)"}
+                      fill={isSelected ? "rgba(79, 70, 229, 0.15)" : isHovered ? "rgba(14, 165, 233, 0.15)" : "rgba(14, 165, 233, 0.05)"}
                       onMouseEnter={() => activeTool === "select" && onHoverObject(obj.id)}
                       onMouseLeave={() => activeTool === "select" && onHoverObject(null)}
                       onClick={(e) => {
@@ -710,11 +710,11 @@ export default function InteractiveCanvas({
           {activeTool === "brush" && flatStrokePoints.length >= 4 && (
             <Line
               points={flatStrokePoints}
-              stroke="#06b6d4"
+              stroke="#0EA5E9"
               strokeWidth={16 / totalScale}
               lineCap="round"
               lineJoin="round"
-              shadowColor="#06b6d4"
+              shadowColor="#0EA5E9"
               shadowBlur={15}
               shadowOpacity={0.9}
               closed={false}
@@ -728,11 +728,11 @@ export default function InteractiveCanvas({
               y={activeRectProps.y}
               width={activeRectProps.width}
               height={activeRectProps.height}
-              stroke="#06b6d4"
+              stroke="#0EA5E9"
               strokeWidth={2.5 / totalScale}
               dash={[8, 4]}
-              fill="rgba(6, 182, 212, 0.25)"
-              shadowColor="#06b6d4"
+              fill="rgba(14, 165, 233, 0.25)"
+              shadowColor="#0EA5E9"
               shadowBlur={10}
             />
           )}
@@ -744,11 +744,11 @@ export default function InteractiveCanvas({
               {flatPolygonPoints.length >= 4 && (
                 <Line
                   points={flatPolygonPoints}
-                  stroke="#06b6d4"
+                  stroke="#0EA5E9"
                   strokeWidth={2.5 / totalScale}
                   closed={false}
                   tension={0}
-                  shadowColor="#06b6d4"
+                  shadowColor="#0EA5E9"
                   shadowBlur={10}
                 />
               )}
@@ -762,7 +762,7 @@ export default function InteractiveCanvas({
                     polygonCursorPos[0],
                     polygonCursorPos[1]
                   ]}
-                  stroke="rgba(6, 182, 212, 0.8)"
+                  stroke="rgba(14, 165, 233, 0.8)"
                   strokeWidth={1.5 / totalScale}
                   dash={[6, 4]}
                 />
@@ -775,10 +775,10 @@ export default function InteractiveCanvas({
                   x={p[0]}
                   y={p[1]}
                   radius={(idx === 0 ? 7 : 4) / totalScale}
-                  fill={idx === 0 ? "#22c55e" : "#06b6d4"}
+                  fill={idx === 0 ? "#10B981" : "#0EA5E9"}
                   stroke="#ffffff"
                   strokeWidth={1.5 / totalScale}
-                  shadowColor={idx === 0 ? "#22c55e" : "#06b6d4"}
+                  shadowColor={idx === 0 ? "#10B981" : "#0EA5E9"}
                   shadowBlur={8}
                 />
               ))}

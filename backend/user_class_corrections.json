@@ -1,5 +1,5 @@
 {
-  "chair": "lounge armchair",
+  "chair": "table",
   "door": "window",
   "lounge armchair": "chair",
   "window": "wall",
@@ -13,5 +13,11 @@
   "roof": "roof",
   "\u057d\u0570\u0565\u056c\u0586": "\u057d\u0570\u0565\u056c\u0586",
   "fireplace": "wall",
-  "shelf": "shelf"
+  "shelf": "shelf",
+  "lamp": "lamp",
+  "roof of the room": "roof of the room",
+  "wall shelf": "wall shelf",
+  "wall lampshade": "wall lampshade",
+  "table": "table",
+  "books": "books"
 }

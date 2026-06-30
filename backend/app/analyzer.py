@@ -96,6 +96,74 @@ class AntigravityVisionPipeline:
 
         log_action("PIPELINE_INIT", f"Multi-Model Pipeline: GDINO={self.has_gdino} SAM={self.has_sam} Depth={self.has_depth}")
 
+    def merge_overlapping_same_class_detections(self, detections: List[dict]) -> List[dict]:
+        """Merge detections of the same class that contain or significantly overlap with one another."""
+        if not detections:
+            return detections
+            
+        merged = True
+        while merged:
+            merged = False
+            new_detections = []
+            skip_indices = set()
+            
+            for i in range(len(detections)):
+                if i in skip_indices:
+                    continue
+                
+                d1 = detections[i]
+                box1 = d1["bbox"]
+                class1 = d1["class"].strip().lower()
+                
+                # Check for other objects of the same class that overlap with d1
+                for j in range(i + 1, len(detections)):
+                    if j in skip_indices:
+                        continue
+                    
+                    d2 = detections[j]
+                    class2 = d2["class"].strip().lower()
+                    
+                    if class1 == class2:
+                        box2 = d2["bbox"]
+                        
+                        # Calculate intersection rectangle
+                        ix1 = max(box1[0], box2[0])
+                        iy1 = max(box1[1], box2[1])
+                        ix2 = min(box1[2], box2[2])
+                        iy2 = min(box1[3], box2[3])
+                        
+                        iw = max(0, ix2 - ix1)
+                        ih = max(0, iy2 - iy1)
+                        intersection_area = iw * ih
+                        
+                        area1 = (box1[2] - box1[0]) * (box1[3] - box1[1])
+                        area2 = (box2[2] - box2[0]) * (box2[3] - box2[1])
+                        min_area = min(area1, area2)
+                        
+                        # If more than 30% of the smaller bounding box overlaps with the other, merge them.
+                        if min_area > 0 and (intersection_area / min_area) > 0.3:
+                            # Union bounding box
+                            new_box = [
+                                min(box1[0], box2[0]),
+                                min(box1[1], box2[1]),
+                                max(box1[2], box2[2]),
+                                max(box1[3], box2[3])
+                            ]
+                            d1["bbox"] = new_box
+                            # Set confidence to the max of the two
+                            d1["confidence"] = max(d1["confidence"], d2["confidence"])
+                            box1 = new_box
+                            skip_indices.add(j)
+                            merged = True
+                            
+                new_detections.append(d1)
+            
+            detections = new_detections
+            if not merged:
+                break
+                
+        return detections
+
     def analyze(
         self,
         file_bytes: bytes,
@@ -137,6 +205,13 @@ class AntigravityVisionPipeline:
             d for d in detections 
             if (d["bbox"][2] - d["bbox"][0]) >= 8 and (d["bbox"][3] - d["bbox"][1]) >= 8
         ]
+
+        # Merge overlapping detections of the same class (e.g. pillow on same class couch to consider as one whole)
+        orig_count = len(detections)
+        detections = self.merge_overlapping_same_class_detections(detections)
+        if len(detections) < orig_count:
+            log_action("STAGE_1_MERGE", f"Same-object overlaps: merged {orig_count - len(detections)} overlapping detections of matching classes.")
+
         log_action("STAGE_1_COMPLETE", f"Grounding DINO Swin-B: {len(detections)} refined objects detected in {gdino_time}ms")
 
         if not detections:

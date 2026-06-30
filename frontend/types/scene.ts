@@ -76,6 +76,9 @@ export interface User {
   name: string;
   email: string;
   avatar?: string;
+  credits?: number;
+  edit_count?: number;
+  plan?: string;
 }
 
 export interface Project {

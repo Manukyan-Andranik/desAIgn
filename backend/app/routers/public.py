@@ -1,6 +1,7 @@
 import os
 import uuid
 import io
+import urllib.parse
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends, Query
 from sqlalchemy.orm import Session
 from typing import Optional
@@ -12,7 +13,7 @@ from app.models import (
     SceneGraph, SceneObject, MaskSegmentation, Point,
     OrchestratorRequest, OrchestratorResponse, OrchestratedAction,
     UpdateObjectClassRequest, MergeObjectsRequest, AddCustomObjectRequest,
-    DetectionResponse, SegmentSceneResponse, InteriorSegmentationResponse,
+    DetectionResponse, DetectedObjectItem, SegmentSceneResponse, SegmentSceneItem, InteriorSegmentationResponse,
     PromptGenerationRequest, PromptGenerationResponse,
     FrameGenerationRequest, FrameGenerationResponse, RegionAIEditRequest
 )
@@ -31,6 +32,23 @@ router = APIRouter(
 
 UPLOADS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "static", "uploads")
 os.makedirs(UPLOADS_DIR, exist_ok=True)
+
+
+def _load_image_bytes_from_url(image_url: str) -> bytes:
+    if not image_url:
+        raise HTTPException(status_code=404, detail="No image URL stored for this project.")
+
+    if "uploads/" in image_url:
+        filename = urllib.parse.unquote(image_url.split("uploads/")[-1].split("?")[0])
+        filepath = os.path.join(UPLOADS_DIR, filename)
+    else:
+        filepath = image_url
+
+    if not os.path.isfile(filepath):
+        raise HTTPException(status_code=404, detail="Image file not found on server.")
+
+    with open(filepath, "rb") as f:
+        return f.read()
 
 
 @router.post("/api/v1/analyze", response_model=SceneGraph)
@@ -83,6 +101,27 @@ async def analyze_render(
 @router.get("/api/v1/scene-graph/{image_id}", response_model=SceneGraph)
 def get_scene_graph(image_id: str, db: Session = Depends(get_db)):
     return load_scene_graph_from_db(db, image_id)
+
+
+@router.post("/api/v1/scene-graph/{image_id}/re-detect", response_model=SceneGraph)
+def redetect_scene_objects(
+    image_id: str,
+    room_type: str = Query("Living Room"),
+    design_style: str = Query("Japandi Minimalist"),
+    db: Session = Depends(get_db),
+):
+    existing = load_scene_graph_from_db(db, image_id)
+    file_bytes = _load_image_bytes_from_url(existing.image_url or "")
+
+    scene_graph = process_uploaded_image(
+        file_bytes=file_bytes,
+        image_id=image_id,
+        image_url=existing.image_url,
+        room_type=room_type,
+        design_style=design_style,
+    )
+    save_scene_graph_to_db(db, scene_graph)
+    return scene_graph
 
 
 @router.post("/api/v1/scene-graph/restore")

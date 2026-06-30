@@ -67,6 +67,22 @@ class UserSchema(BaseModel):
     name: str
     email: str
     avatar: Optional[str] = None
+    credits: int = 1000
+    edit_count: int = 0
+    plan: str = "Standard"
+
+
+class UpgradePlanRequest(BaseModel):
+    plan: str = Field(..., description="Target plan name: Standard, Pro Studio, or Enterprise")
+
+class UpdateProfileRequest(BaseModel):
+    name: Optional[str] = Field(None, description="Display name")
+    email: Optional[str] = Field(None, description="Account email")
+    avatar: Optional[str] = Field(None, description="Avatar URL or base64 data URL")
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(..., min_length=1)
+    new_password: str = Field(..., min_length=6)
 
 class LoginRequest(BaseModel):
     email: str

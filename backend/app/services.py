@@ -13,13 +13,13 @@ def save_scene_graph_to_db(db: Session, sg: SceneGraph) -> db_models.SceneGraphR
             width=sg.width,
             height=sg.height,
             version=sg.version,
-            relationships=[r.model_dump() for r in sg.relationships] if sg.relationships else None
+            relationships=[r.model_dump() if hasattr(r, "model_dump") else r for r in sg.relationships] if sg.relationships else None
         )
         db.add(rec)
     else:
         rec.version = sg.version
         rec.image_url = sg.image_url
-        rec.relationships = [r.model_dump() for r in sg.relationships] if sg.relationships else None
+        rec.relationships = [r.model_dump() if hasattr(r, "model_dump") else r for r in sg.relationships] if sg.relationships else None
         db.query(db_models.SceneObjectRecord).filter(db_models.SceneObjectRecord.scene_graph_id == sg.image_id).delete()
 
     for obj in sg.objects:
@@ -67,9 +67,9 @@ def load_scene_graph_from_db(db: Session, image_id: str) -> SceneGraph:
 
     objects = []
     for obj_rec in rec.objects:
-        polygon_points = [Point(**p) for p in obj_rec.polygon]
-        nv = NormalVector(**obj_rec.normal_vector) if obj_rec.normal_vector else None
-        seg = MaskSegmentation(**obj_rec.segmentation) if obj_rec.segmentation else None
+        polygon_points = [p if isinstance(p, Point) else Point.model_validate(p) for p in obj_rec.polygon] if isinstance(obj_rec.polygon, list) else []
+        nv = obj_rec.normal_vector if isinstance(obj_rec.normal_vector, NormalVector) else (NormalVector.model_validate(obj_rec.normal_vector) if isinstance(obj_rec.normal_vector, dict) else None)
+        seg = obj_rec.segmentation if isinstance(obj_rec.segmentation, MaskSegmentation) else (MaskSegmentation.model_validate(obj_rec.segmentation) if isinstance(obj_rec.segmentation, dict) else None)
         objects.append(SceneObject(
             id=obj_rec.object_id,
             **{"class": obj_rec.object_class},
@@ -90,7 +90,14 @@ def load_scene_graph_from_db(db: Session, image_id: str) -> SceneGraph:
             sub_components=obj_rec.sub_components or []
         ))
 
-    relationships = [SceneRelationship(**r) for r in rec.relationships] if rec.relationships else []
+    relationships = []
+    if isinstance(rec.relationships, list):
+        for r in rec.relationships:
+            if isinstance(r, SceneRelationship):
+                relationships.append(r)
+            elif isinstance(r, dict):
+                relationships.append(SceneRelationship.model_validate(r))
+
 
     return SceneGraph(
         image_id=rec.id,

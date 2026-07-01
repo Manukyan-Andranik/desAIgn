@@ -62,7 +62,8 @@ def _save_avatar(user_id: str, avatar: str) -> str:
     with open(filepath, "wb") as f:
         f.write(image_data)
 
-    return f"http://localhost:8000/uploads/avatars/{filename}"
+    backend_base = os.getenv("BACKEND_API", "http://localhost:8000")
+    return f"{backend_base}/uploads/avatars/{filename}"
 
 
 @router.get("/users", response_model=list[UserSchema])
@@ -247,6 +248,36 @@ def create_project(req: CreateProjectRequest, db: Session = Depends(get_db)):
     db.commit()
     
     sg = db.query(db_models.SceneGraphRecord).filter(db_models.SceneGraphRecord.id == req.image_id).first()
+    if not sg:
+        import shutil
+        uploads_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "..", "..", "static", "uploads")
+        src_path = os.path.join(uploads_dir, "default.jpg")
+        
+        unique_filename = f"render_{req.image_id}.jpg"
+        dest_path = os.path.join(uploads_dir, unique_filename)
+        
+        if os.path.exists(src_path):
+            shutil.copy2(src_path, dest_path)
+            backend_base = os.getenv("BACKEND_API", "http://localhost:8000")
+            img_url = f"{backend_base}/uploads/{unique_filename}"
+        else:
+            backend_base = os.getenv("BACKEND_API", "http://localhost:8000")
+            img_url = f"{backend_base}/uploads/default.jpg"
+            
+        from app.vision import process_uploaded_image
+        from app.services import save_scene_graph_to_db
+        
+        scene_graph = process_uploaded_image(
+            file_bytes=b"",
+            image_id=req.image_id,
+            image_url=img_url,
+            room_type=req.room_type,
+            design_style=req.design_style
+        )
+        save_scene_graph_to_db(db, scene_graph)
+        
+        sg = db.query(db_models.SceneGraphRecord).filter(db_models.SceneGraphRecord.id == req.image_id).first()
+        
     img_url = sg.image_url if sg else None
     obj_count = len(sg.objects) if sg and sg.objects else 0
     
@@ -268,9 +299,36 @@ def delete_project(project_id: str, user_id: Optional[str] = Query(None), db: Se
         raise HTTPException(status_code=404, detail="Project not found")
     if user_id and p.user_id != user_id:
         raise HTTPException(status_code=403, detail="Access denied. Project belongs to another user.")
+    
+    image_id = p.image_id
     db.delete(p)
     db.commit()
-    return {"status": "success", "message": f"Deleted project '{project_id}'"}
+
+    if image_id:
+        # Check if any other project is using this image_id
+        other_proj = db.query(db_models.ProjectRecord).filter(db_models.ProjectRecord.image_id == image_id).first()
+        if not other_proj:
+            # Delete scene graph
+            sg = db.query(db_models.SceneGraphRecord).filter(db_models.SceneGraphRecord.id == image_id).first()
+            if sg:
+                img_url = sg.image_url
+                if img_url and "uploads/" in img_url and "default.jpg" not in img_url:
+                    try:
+                        import urllib.parse
+                        fname = urllib.parse.unquote(img_url.split("uploads/")[-1].split("?")[0])
+                        uploads_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "..", "..", "static", "uploads")
+                        filepath = os.path.join(uploads_dir, fname)
+                        if os.path.exists(filepath):
+                            os.remove(filepath)
+                    except Exception as e:
+                        print(f"[Project Deletion Warning] Failed to delete physical image file: {e}")
+                db.delete(sg)
+            
+            # Delete history records
+            db.query(db_models.OrchestrationHistoryRecord).filter(db_models.OrchestrationHistoryRecord.scene_graph_id == image_id).delete()
+            db.commit()
+
+    return {"status": "success", "message": f"Deleted project '{project_id}' and all associated assets."}
 
 @router.post("/projects/{project_id}/duplicate", response_model=ProjectSchema)
 def duplicate_project(project_id: str, user_id: Optional[str] = Query(None), db: Session = Depends(get_db)):

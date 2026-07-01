@@ -15,10 +15,15 @@ interface ProjectsPageProps {
   onDeleteProject?: (id: string) => void;
   onDuplicateProject?: (id: string) => void;
   onOpenAuthModal?: () => void;
+  onCreateProject?: (title: string, room: string, style: string, file?: File) => void;
 }
 
 const ROOM_OPTIONS = [
   "Living Room", "Kitchen", "Bedroom", "Bathroom", "Office & Study", "Cafe & Restaurant", "Outdoor Patio"
+];
+
+const STYLE_OPTIONS = [
+  "Japandi Minimalist", "Scandinavian Modern", "Industrial Brutalist", "Biophilic Luxury", "Mid-Century Modern", "Classic Art Deco"
 ];
 
 export default function ProjectsPage({
@@ -28,10 +33,18 @@ export default function ProjectsPage({
   onSelectProject,
   onDeleteProject,
   onDuplicateProject,
-  onOpenAuthModal
+  onOpenAuthModal,
+  onCreateProject
 }: ProjectsPageProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedRoomFilter, setSelectedRoomFilter] = useState("all");
+
+  // Create Project Modal States
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newTitle, setNewTitle] = useState("");
+  const [newRoomType, setNewRoomType] = useState("Living Room");
+  const [newDesignStyle, setNewDesignStyle] = useState("Japandi Minimalist");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   const roomFilters = [
     { id: "all", label: "All Rooms" },
@@ -64,9 +77,9 @@ export default function ProjectsPage({
           <div className="space-y-2">
             <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-white border border-[#E2E8F0] text-[#4F46E5] font-mono text-xs shadow-sm">
               {activeUser?.avatar ? (
-                <img src={activeUser.avatar} alt={activeUser.name} className="w-4 h-4 rounded-full object-cover" />
+                <img src={activeUser.avatar} alt={activeUser.name} className="w-5 h-5 rounded-md object-cover border border-[#E2E8F0]" />
               ) : (
-                <ShieldCheck className="w-3.5 h-3.5 text-[#4F46E5]" />
+                <ShieldCheck className="w-4 h-4 text-[#4F46E5]" />
               )}
               <span className="font-semibold">{activeUser ? `${activeUser.name}'s projects` : "Sign in to view projects"}</span>
             </div>
@@ -89,7 +102,7 @@ export default function ProjectsPage({
             )}
 
             <button
-              onClick={onUploadClick}
+              onClick={() => setShowCreateModal(true)}
               className="px-5 py-2.5 bg-[#4F46E5] hover:bg-[#6366F1] text-white border-0 font-bold rounded-xl text-xs flex items-center space-x-2 transition-all duration-200 active:scale-[0.97] shadow-lg shadow-[#4F46E5]/20"
             >
               <Plus className="w-4 h-4" />
@@ -278,6 +291,122 @@ export default function ProjectsPage({
         </div>
 
       </div>
+
+      {showCreateModal && (
+        <div className="fixed inset-0 z-50 bg-[#0F172A]/30 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in select-none">
+          <div className="w-full max-w-md bg-white border border-[#E2E8F0] rounded-2xl shadow-xl overflow-hidden flex flex-col p-6 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
+              <h3 className="text-sm font-bold text-[#0F172A] uppercase tracking-wide flex items-center gap-1.5 font-sans">
+                <FolderPlus className="w-4 h-4 text-[#4F46E5]" />
+                Create New Project
+              </h3>
+              <button
+                onClick={() => {
+                  setShowCreateModal(false);
+                  setNewTitle("");
+                  setSelectedFile(null);
+                }}
+                className="p-1 text-[#64748B] hover:text-[#0F172A] rounded-lg hover:bg-slate-100 transition-all"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3.5">
+              {/* Title input */}
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-[#64748B] uppercase tracking-wider font-mono">Project Title</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Dream Living Room"
+                  value={newTitle}
+                  onChange={(e) => setNewTitle(e.target.value)}
+                  className="w-full bg-white border border-[#E2E8F0] focus:border-[#4F46E5] focus:ring-1 focus:ring-[#4F46E5]/30 rounded-xl px-3 py-2 text-xs text-[#0F172A] placeholder-[#64748B]/40 focus:outline-none transition-all duration-200"
+                />
+              </div>
+
+              {/* Room type dropdown */}
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-[#64748B] uppercase tracking-wider font-mono">Room Type</label>
+                <select
+                  value={newRoomType}
+                  onChange={(e) => setNewRoomType(e.target.value)}
+                  className="w-full bg-white border border-[#E2E8F0] focus:border-[#4F46E5] focus:ring-1 focus:ring-[#4F46E5]/30 rounded-xl px-3 py-2 text-xs text-[#0F172A] focus:outline-none transition-all duration-200"
+                >
+                  {ROOM_OPTIONS.map((opt) => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Design style dropdown */}
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-[#64748B] uppercase tracking-wider font-mono">Design Style</label>
+                <select
+                  value={newDesignStyle}
+                  onChange={(e) => setNewDesignStyle(e.target.value)}
+                  className="w-full bg-white border border-[#E2E8F0] focus:border-[#4F46E5] focus:ring-1 focus:ring-[#4F46E5]/30 rounded-xl px-3 py-2 text-xs text-[#0F172A] focus:outline-none transition-all duration-200"
+                >
+                  {STYLE_OPTIONS.map((opt) => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Custom Image Upload Dropzone */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-[#64748B] uppercase tracking-wider font-mono">Room Photo (Optional)</label>
+                <div className="border-2 border-dashed border-[#E2E8F0] hover:border-[#4F46E5]/50 rounded-2xl p-4 text-center cursor-pointer transition-all bg-slate-50/50">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                    className="hidden"
+                    id="modal-project-file-upload"
+                  />
+                  <label htmlFor="modal-project-file-upload" className="cursor-pointer space-y-1 block">
+                    <Plus className="w-5 h-5 text-[#4F46E5] mx-auto animate-pulse" />
+                    <span className="text-[11px] font-bold text-[#0F172A] block truncate max-w-xs px-2">
+                      {selectedFile ? selectedFile.name : "Upload room photo"}
+                    </span>
+                    <span className="text-[10px] text-[#64748B] block">
+                      {selectedFile ? "Click to select a different photo" : "Leave empty to use a default room template"}
+                    </span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-[#E2E8F0] flex items-center justify-end space-x-3 shrink-0">
+              <button
+                onClick={() => {
+                  setShowCreateModal(false);
+                  setNewTitle("");
+                  setSelectedFile(null);
+                }}
+                className="px-4 py-2 border border-[#E2E8F0] hover:bg-slate-50 font-bold rounded-xl text-xs text-[#64748B]"
+              >
+                Cancel
+              </button>
+              <button
+                disabled={!newTitle.trim()}
+                onClick={() => {
+                  if (onCreateProject) {
+                    onCreateProject(newTitle.trim(), newRoomType, newDesignStyle, selectedFile || undefined);
+                  }
+                  setShowCreateModal(false);
+                  setNewTitle("");
+                  setSelectedFile(null);
+                }}
+                className="px-4 py-2 bg-[#4F46E5] hover:bg-[#6366F1] text-white disabled:opacity-50 border-0 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all duration-200"
+              >
+                <span>Create Project</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

@@ -24,7 +24,12 @@ from app.models import (
 )
 from app.logger import log_action
 
-load_dotenv()
+# Load environment variables from backend/.env explicitly
+dotenv_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
+if os.path.exists(dotenv_path):
+    load_dotenv(dotenv_path)
+else:
+    load_dotenv()
 
 # ─── Attempt Google GenAI Import ──────────────────────────────────────────────
 HAS_GEMINI = False
@@ -217,11 +222,31 @@ class GenerativeEngineProvider:
         image_path: str, 
         target_object: SceneObject, 
         action: OrchestratedAction,
-        user_prompt: Optional[str] = None
+        user_prompt: Optional[str] = None,
+        image_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Professional Architectural Inpainting & Redesign Engine for Interior Visualizers.
         """
+        # Locate the original image file in uploads matching the image_id
+        original_file = None
+        if image_id:
+            for f in os.listdir(self.uploads_dir):
+                if f.startswith(f"render_{image_id}") or f.startswith(image_id):
+                    original_file = os.path.join(self.uploads_dir, f)
+                    break
+        
+        # If still not found, try to extract image ID from current image_path
+        if not original_file and image_path and "uploads/" in image_path:
+            fname = urllib.parse.unquote(image_path.split("uploads/")[-1].split("?")[0])
+            match = re.search(r'(render_[a-zA-Z0-9]+)', fname)
+            if match:
+                prefix = match.group(1)
+                for f in os.listdir(self.uploads_dir):
+                    if f.startswith(prefix):
+                        original_file = os.path.join(self.uploads_dir, f)
+                        break
+
         prompt_text = user_prompt or f"Modify {target_object.object_class} to be made of {action.material}"
         prompt_lower = prompt_text.lower().strip()
 
@@ -246,11 +271,24 @@ class GenerativeEngineProvider:
 
         # Handle Restore / Revert Command
         if any(w in prompt_lower for w in ["restore", "reset", "revert", "original"]):
-            original_path = "/Users/andranikmanukyan/Desktop/Souls of Code/design os/2026-06-27 20.43.07.jpg"
-            if os.path.exists(original_path):
-                img = cv2.imread(original_path)
-                cv2.imwrite(out_filepath, img)
-                log_action("RESTORE_IMAGE_SUCCESS", f"Restored unedited render image to '{out_filename}'")
+            revert_src = None
+            if original_file and os.path.exists(original_file):
+                revert_src = original_file
+            else:
+                fallback_paths = [
+                    os.path.join(self.uploads_dir, "default.jpg"),
+                    "/Users/andranikmanukyan/Desktop/Souls of Code/design os/2026-06-27 20.43.07.jpg"
+                ]
+                for fp in fallback_paths:
+                    if os.path.exists(fp):
+                        revert_src = fp
+                        break
+            
+            if revert_src:
+                img = cv2.imread(revert_src)
+                cv2.imwrite(out_filepath, img, [int(cv2.IMWRITE_JPEG_QUALITY), 100])
+                log_action("RESTORE_IMAGE_SUCCESS", f"Restored unedited render image to '{out_filename}' from '{revert_src}'")
+                backend_base = os.getenv("BACKEND_API", "http://localhost:8000")
                 return {
                     "status": "completed",
                     "provider": "ArchitecturalRedesignEngine",
@@ -258,10 +296,80 @@ class GenerativeEngineProvider:
                     "mask_target": target_object.id,
                     "target_class": target_object.object_class,
                     "new_material": "Original Render Finish",
-                    "generated_image_url": f"http://localhost:8000/uploads/{out_filename}"
+                    "generated_image_url": f"{backend_base}/uploads/{out_filename}"
                 }
 
-        if self.gemini_client:
+        # 1. OpenRouter grok-imagine-image-quality Integration (Primary)
+        openrouter_api_key = os.getenv("OPENROUTER_IMAGE_MODEL_API")
+        if openrouter_api_key:
+            try:
+                import base64
+                import requests
+                log_action("OPENROUTER_API_REQUEST", "Routing image generation via OpenRouter using 'x-ai/grok-imagine-image-quality'...")
+                
+                local_base_path = None
+                if image_path and "uploads/" in image_path:
+                    fname = urllib.parse.unquote(image_path.split("uploads/")[-1].split("?")[0])
+                    local_base_path = os.path.join(self.uploads_dir, fname)
+                
+                if not local_base_path or not os.path.exists(local_base_path):
+                    if original_file and os.path.exists(original_file):
+                        local_base_path = original_file
+                    else:
+                        local_base_path = os.path.join(self.uploads_dir, "default.jpg")
+                
+                if os.path.exists(local_base_path):
+                    img = cv2.imread(local_base_path)
+                    img_h, img_w, _ = img.shape
+                    
+                    actual_bbox = [0, 0, img_w, img_h] if target_object.id == "all_image" else (target_object.bbox if target_object.bbox else [0, 0, img_w, img_h])
+                    
+                    with open(local_base_path, "rb") as f:
+                        img_bytes = f.read()
+                    base64_image = base64.b64encode(img_bytes).decode("utf-8")
+                    
+                    url = "https://openrouter.ai/api/v1/images"
+                    headers = {
+                        "Authorization": f"Bearer {openrouter_api_key}",
+                        "Content-Type": "application/json"
+                    }
+                    payload = {
+                        "model": "x-ai/grok-imagine-image-quality",
+                        "prompt": prompt_text,
+                        "input_references": [
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{base64_image}"
+                                }
+                            }
+                        ],
+                        "bbox": actual_bbox
+                    }
+                    
+                    response = requests.post(url, headers=headers, json=payload, timeout=45)
+                    if response.status_code == 200:
+                        result = response.json()
+                        img_data = result.get("data", [])
+                        if img_data:
+                            b64_json = img_data[0].get("b64_json")
+                            if b64_json:
+                                generated_image_bytes = base64.b64decode(b64_json)
+                                with open(out_filepath, "wb") as f:
+                                    f.write(generated_image_bytes)
+                                image_updated = True
+                                log_action("OPENROUTER_SUCCESS", f"Generated image via x-ai/grok-imagine-image-quality saved to {out_filename}")
+                            else:
+                                log_action("OPENROUTER_ERROR", "Response data missing base64 string", level="WARNING")
+                        else:
+                            log_action("OPENROUTER_ERROR", f"Response data empty: {result}", level="WARNING")
+                    else:
+                        log_action("OPENROUTER_ERROR", f"API request failed with status {response.status_code}: {response.text}", level="WARNING")
+            except Exception as e:
+                log_action("OPENROUTER_API_EXCEPTION", f"Failed calling OpenRouter: {e}", level="WARNING")
+
+        # 2. Gemini Integration (Fallback 1)
+        if not image_updated and self.gemini_client:
             try:
                 log_action("GEMINI_API_REQUEST", "Routing image generation via official Imagen 3 model identifier...")
                 result = self.gemini_client.models.generate_images(
@@ -300,7 +408,7 @@ class GenerativeEngineProvider:
                 except Exception as ex:
                     log_action("CLOUD_AI_DISCONNECT", f"All cloud endpoints restricted: {ex}. Engaging local precision CV engine.")
 
-        # 2. Local High-Precision Architectural Material Synthesis Engine
+        # 3. Fallback to Local Precision CV Engine (Fallback 2)
         if not image_updated:
             try:
                 local_base_path = None
@@ -309,14 +417,19 @@ class GenerativeEngineProvider:
                     local_base_path = os.path.join(self.uploads_dir, fname)
                 
                 if not local_base_path or not os.path.exists(local_base_path):
-                    local_base_path = "/Users/andranikmanukyan/Desktop/Souls of Code/design os/2026-06-27 20.43.07.jpg"
+                    if original_file and os.path.exists(original_file):
+                        local_base_path = original_file
+                    else:
+                        local_base_path = os.path.join(self.uploads_dir, "default.jpg")
 
                 if os.path.exists(local_base_path):
                     img = cv2.imread(local_base_path)
                     h, w, _ = img.shape
 
                     mask = np.zeros((h, w), dtype=np.uint8)
-                    if target_object.polygon and len(target_object.polygon) >= 3:
+                    if target_object.id == "all_image":
+                        mask[:, :] = 255
+                    elif target_object.polygon and len(target_object.polygon) >= 3:
                         pts = np.array([[int(pt.x), int(pt.y)] for pt in target_object.polygon], dtype=np.int32)
                         cv2.fillPoly(mask, [pts], 255)
                     elif (
@@ -380,13 +493,14 @@ class GenerativeEngineProvider:
                         boosted = cv2.convertScaleAbs(img, alpha=1.25, beta=10)
                         edited_img[mask > 0] = cv2.addWeighted(img[mask > 0], 0.35, boosted[mask > 0], 0.65, 0)
 
-                    cv2.imwrite(out_filepath, edited_img)
+                    cv2.imwrite(out_filepath, edited_img, [int(cv2.IMWRITE_JPEG_QUALITY), 100])
                     image_updated = True
                     log_action("MATERIAL_SYNTHESIS_SUCCESS", f"Applied material '{prompt_text}' to object '{target_object.id}'")
             except Exception as ex:
                 log_action("MATERIAL_SYNTHESIS_ERROR", str(ex), level="ERROR")
 
-        new_url = f"http://localhost:8000/uploads/{out_filename}" if image_updated else image_path
+        backend_base = os.getenv("BACKEND_API", "http://localhost:8000")
+        new_url = f"{backend_base}/uploads/{out_filename}" if image_updated else image_path
         log_action("GENERATIVE_INPAINT_COMPLETE", f"Output render URL -> {new_url}")
 
         return {

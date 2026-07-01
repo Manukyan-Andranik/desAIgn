@@ -722,7 +722,7 @@ export default function InteractiveCanvas({
           )}
 
           {/* Active User Rectangle Selection Box Preview */}
-          {activeTool === "rectangle" && activeRectProps && (
+          {activeTool === "rectangle" && activeRectProps && activeRectProps.width > 0 && activeRectProps.height > 0 && (
             <Rect
               x={activeRectProps.x}
               y={activeRectProps.y}

@@ -279,7 +279,7 @@ export default function AccountPage({
             <button
               type="button"
               onClick={() => avatarInputRef.current?.click()}
-              className="w-20 h-20 rounded-full border border-[#E2E8F0] bg-white relative overflow-hidden flex items-center justify-center group shrink-0 shadow-sm"
+              className="w-20 h-20 rounded-2xl border-2 border-[#4F46E5] bg-white relative overflow-hidden flex items-center justify-center group shrink-0 shadow-md ring-4 ring-[#4F46E5]/10"
               title="Change profile photo"
             >
               {profileAvatar ? (
@@ -287,7 +287,7 @@ export default function AccountPage({
               ) : (
                 <UserIcon className="w-10 h-10 text-[#64748B]" />
               )}
-              <div className="absolute inset-0 bg-white/85 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity border border-[#E2E8F0]">
+              <div className="absolute inset-0 bg-white/85 rounded-2xl flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity border border-[#E2E8F0]">
                 <Camera className="w-4 h-4 text-[#4F46E5]" />
               </div>
             </button>
@@ -395,7 +395,7 @@ export default function AccountPage({
                     <button
                       type="button"
                       onClick={() => avatarInputRef.current?.click()}
-                      className="w-16 h-16 rounded-full border border-[#E2E8F0] bg-white overflow-hidden flex items-center justify-center shrink-0"
+                      className="w-16 h-16 rounded-xl border-2 border-[#4F46E5] bg-white overflow-hidden flex items-center justify-center shrink-0 ring-4 ring-[#4F46E5]/10 shadow-sm"
                     >
                       {profileAvatar ? (
                         <img src={profileAvatar} alt="Profile preview" className="w-full h-full object-cover" />

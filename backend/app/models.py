@@ -1,5 +1,6 @@
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
+from datetime import datetime
 
 class Point(BaseModel):
     x: float = Field(..., description="X coordinate in pixels")
@@ -83,6 +84,22 @@ class UpdateProfileRequest(BaseModel):
 class ChangePasswordRequest(BaseModel):
     current_password: str = Field(..., min_length=1)
     new_password: str = Field(..., min_length=6)
+
+
+class HistoryItemSchema(BaseModel):
+    id: int
+    scene_graph_id: str
+    target_id: str
+    prompt: str
+    action_type: str
+    target_material: Optional[str] = None
+    image_url: Optional[str] = None
+    created_at: datetime
+
+
+class RestoreUrlRequest(BaseModel):
+    image_url: str = Field(..., description="Target image URL to restore")
+
 
 class LoginRequest(BaseModel):
     email: str

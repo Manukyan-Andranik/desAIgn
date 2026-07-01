@@ -22,10 +22,10 @@ export default function UserSwitcher({ users, activeUser, onSelectUser }: UserSw
         className="flex items-center space-x-2 bg-elevated/90 hover:bg-panel border border-border hover:border-cyan-500/60 px-3 py-1.5 rounded-xl text-xs font-mono transition-all shadow-sm group"
       >
         {activeUser.avatar ? (
-          <img src={activeUser.avatar} alt={activeUser.name} className="w-5 h-5 rounded-full object-cover border border-cyan-500/40" />
+          <img src={activeUser.avatar} alt={activeUser.name} className="w-6 h-6 rounded-lg object-cover border-2 border-cyan-500 ring-2 ring-cyan-500/15 shadow-sm" />
         ) : (
-          <div className="w-5 h-5 rounded-full icon-badge-cyan flex items-center justify-center text-[10px] font-bold">
-            <UserIcon className="w-3 h-3" />
+          <div className="w-6 h-6 rounded-lg icon-badge-cyan border-2 border-cyan-500 ring-2 ring-cyan-500/15 flex items-center justify-center text-[10px] font-bold shadow-sm">
+            <UserIcon className="w-3.5 h-3.5" />
           </div>
         )}
         <span className="font-bold text-foreground group-hover:text-cyan-300 transition-colors">{activeUser.name}</span>
@@ -56,9 +56,11 @@ export default function UserSwitcher({ users, activeUser, onSelectUser }: UserSw
                 >
                   <div className="flex items-center space-x-2.5 truncate">
                     {u.avatar ? (
-                      <img src={u.avatar} alt={u.name} className="w-5 h-5 rounded-full object-cover" />
+                      <img src={u.avatar} alt={u.name} className="w-5 h-5 rounded-md object-cover border border-border" />
                     ) : (
-                      <UserIcon className="w-4 h-4 text-muted-foreground" />
+                      <div className="w-5 h-5 rounded-md bg-panel border border-border flex items-center justify-center">
+                        <UserIcon className="w-3 h-3 text-muted-foreground" />
+                      </div>
                     )}
                     <div className="truncate">
                       <div className="font-semibold text-xs leading-none">{u.name}</div>

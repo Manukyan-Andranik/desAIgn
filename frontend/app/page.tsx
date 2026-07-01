@@ -170,7 +170,7 @@ export default function StudioPage() {
 
   const syncSceneGraphToDB = async (sg: SceneGraph) => {
     try {
-      await fetch("http://localhost:8000/api/v1/scene-graph/restore", {
+      await fetch(`${API_BASE}/api/v1/scene-graph/restore`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(sg)
@@ -240,6 +240,18 @@ export default function StudioPage() {
       } else if (key === "y") {
         e.preventDefault();
         handleRedo();
+      } else if (key === "a") {
+        e.preventDefault();
+        const sg = sceneGraphRef.current;
+        if (sg) {
+          const allIds = sg.objects.map((obj) => obj.id);
+          setSelectedObjectIds(allIds);
+          if (allIds.length > 0) {
+            setSelectedObjectId(allIds[allIds.length - 1]);
+          } else {
+            setSelectedObjectId(null);
+          }
+        }
       }
     };
     window.addEventListener("keydown", handleGlobalKeyDown, true);
@@ -254,6 +266,9 @@ export default function StudioPage() {
   // Loading states
   const [uploading, setUploading] = useState(false);
   const [isOrchestrating, setIsOrchestrating] = useState(false);
+  const [showDownloadConfirmModal, setShowDownloadConfirmModal] = useState<boolean>(false);
+  const [isDownloading, setIsDownloading] = useState<boolean>(false);
+  const [isRefreshingDetection, setIsRefreshingDetection] = useState(false);
 
   // Resizable Panel Width States
   const [leftWidth, setLeftWidth] = useState(250);
@@ -359,7 +374,7 @@ export default function StudioPage() {
 
   const fetchSceneGraph = async (id: string) => {
     try {
-      const res = await fetch(`http://localhost:8000/api/v1/scene-graph/${id}`);
+      const res = await fetch(`${API_BASE}/api/v1/scene-graph/${id}`);
       if (!res.ok) {
         if (res.status === 404) {
           setImageId("");
@@ -381,6 +396,30 @@ export default function StudioPage() {
       }
     } catch (err) {
       console.error("Failed to fetch scene graph:", err);
+    }
+  };
+
+  const handleRefreshDetection = async () => {
+    if (!imageId) return;
+    setIsRefreshingDetection(true);
+    showToast("Re-running object detection on current layout...", "AI Vision", "ai");
+    try {
+      pushHistorySnapshot();
+      const res = await fetch(`${API_BASE}/api/v1/scene-graph/${imageId}/refresh-detection`, {
+        method: "POST"
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSceneGraph(data);
+        showToast("Successfully re-detected layout objects!", "Success", "success");
+      } else {
+        showToast("Failed to run object detection.", "Error", "info");
+      }
+    } catch (err) {
+      console.error("Refresh object detection error:", err);
+      showToast("Error while running object detection.", "Error", "info");
+    } finally {
+      setIsRefreshingDetection(false);
     }
   };
 
@@ -453,7 +492,7 @@ export default function StudioPage() {
 
   const fetchUserProjects = async (userId: string) => {
     try {
-      const res = await fetch(`http://localhost:8000/api/v1/users/${userId}/projects`);
+      const res = await fetch(`${API_BASE}/api/v1/users/${userId}/projects`);
       if (res.ok) {
         const data: Project[] = await res.json();
         setProjects(data);
@@ -482,9 +521,81 @@ export default function StudioPage() {
     showToast(`Opened "${proj.title}" in studio`, "Projects", "info");
   };
 
+  const handleCreateProject = async (title: string, room: string, style: string, file?: File) => {
+    if (!activeUser) return;
+    try {
+      if (file) {
+        setUploading(true);
+        setSelectedObjectIds([]);
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("room_type", room);
+        formData.append("design_style", style);
+        formData.append("user_id", activeUser.id);
+        formData.append("project_title", title);
+
+        const res = await fetch(`${API_BASE}/api/v1/analyze`, {
+          method: "POST",
+          body: formData
+        });
+        if (res.ok) {
+          const data: SceneGraph = await res.json();
+          fetchUserProjects(activeUser.id);
+          openStudioWorkspace({
+            imageId: data.image_id,
+            roomType: room,
+            designStyle: style,
+          });
+          setSceneGraph(data);
+          if (data.objects.length > 0) {
+            setSelectedObjectId(data.objects[0].id);
+            setSelectedObjectIds([data.objects[0].id]);
+          }
+          showToast(`Created project "${title}".`, "Projects", "success");
+        }
+      } else {
+        const imageId = `render_${Math.random().toString(36).substring(2, 10)}`;
+        const res = await fetch(`${API_BASE}/api/v1/projects`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            user_id: activeUser.id,
+            title: title,
+            image_id: imageId,
+            room_type: room,
+            design_style: style
+          })
+        });
+        if (res.ok) {
+          const newProj: Project = await res.json();
+          fetchUserProjects(activeUser.id);
+          
+          const sgRes = await fetch(`${API_BASE}/api/v1/scene-graph/${imageId}`);
+          if (sgRes.ok) {
+            const data: SceneGraph = await sgRes.json();
+            openStudioWorkspace({
+              imageId: imageId,
+              roomType: room,
+              designStyle: style,
+            });
+            setSceneGraph(data);
+            setSelectedObjectId(null);
+            setSelectedObjectIds([]);
+            showToast(`Created template project "${title}".`, "Projects", "success");
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Failed to create project:", err);
+      showToast("Error creating project.", "Projects", "info");
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const handleDeleteProject = async (projectId: string) => {
     try {
-      const url = activeUser ? `http://localhost:8000/api/v1/projects/${projectId}?user_id=${activeUser.id}` : `http://localhost:8000/api/v1/projects/${projectId}`;
+      const url = activeUser ? `${API_BASE}/api/v1/projects/${projectId}?user_id=${activeUser.id}` : `${API_BASE}/api/v1/projects/${projectId}`;
       const res = await fetch(url, { method: "DELETE" });
       if (res.ok && activeUser) {
         fetchUserProjects(activeUser.id);
@@ -497,7 +608,7 @@ export default function StudioPage() {
 
   const handleDuplicateProject = async (projectId: string) => {
     try {
-      const url = activeUser ? `http://localhost:8000/api/v1/projects/${projectId}/duplicate?user_id=${activeUser.id}` : `http://localhost:8000/api/v1/projects/${projectId}/duplicate`;
+      const url = activeUser ? `${API_BASE}/api/v1/projects/${projectId}/duplicate?user_id=${activeUser.id}` : `${API_BASE}/api/v1/projects/${projectId}/duplicate`;
       const res = await fetch(url, { method: "POST" });
       if (res.ok && activeUser) {
         fetchUserProjects(activeUser.id);
@@ -543,7 +654,7 @@ export default function StudioPage() {
     formData.append("project_title", `${roomType} (${file.name})`);
 
     try {
-      const res = await fetch("http://localhost:8000/api/v1/analyze", {
+      const res = await fetch(`${API_BASE}/api/v1/analyze`, {
         method: "POST",
         body: formData
       });
@@ -615,6 +726,15 @@ export default function StudioPage() {
             : prev.objects
         };
       });
+
+      // Background object detection is running on the newly generated image.
+      // Fetch the scene graph after 5s and 10s to pick up newly discovered objects.
+      setTimeout(() => {
+        if (imageId) fetchSceneGraph(imageId);
+      }, 5000);
+      setTimeout(() => {
+        if (imageId) fetchSceneGraph(imageId);
+      }, 10000);
     }
   };
 
@@ -635,7 +755,7 @@ export default function StudioPage() {
   const handleObjectDeleted = async (deletedId: string) => {
     try {
       pushHistorySnapshot();
-      const res = await fetch(`http://localhost:8000/api/v1/object/${imageId}/${deletedId}`, {
+      const res = await fetch(`${API_BASE}/api/v1/object/${imageId}/${deletedId}`, {
         method: "DELETE"
       });
       if (res.ok) {
@@ -682,7 +802,7 @@ export default function StudioPage() {
     if (selectedObjectIds.length < 2) return;
     try {
       pushHistorySnapshot();
-      const res = await fetch("http://localhost:8000/api/v1/object/merge", {
+      const res = await fetch(`${API_BASE}/api/v1/object/merge`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -708,7 +828,7 @@ export default function StudioPage() {
     if (!imageId || !className.trim() || brushPoints.length < 3) return;
     try {
       pushHistorySnapshot();
-      const res = await fetch("http://localhost:8000/api/v1/object/add-custom", {
+      const res = await fetch(`${API_BASE}/api/v1/object/add-custom`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -736,7 +856,7 @@ export default function StudioPage() {
     setIsOrchestrating(true);
     try {
       pushHistorySnapshot();
-      const res = await fetch("http://localhost:8000/api/v1/object/ai-edit", {
+      const res = await fetch(`${API_BASE}/api/v1/object/ai-edit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -756,6 +876,15 @@ export default function StudioPage() {
         }
         showToast(data.message || `AI edit applied to "${objectName}".`, "AI Edit", "success");
         recordEditTrial();
+
+        // Background object detection is running on the newly generated image.
+        // Fetch the scene graph after 5s and 10s to pick up newly discovered objects.
+        setTimeout(() => {
+          if (imageId) fetchSceneGraph(imageId);
+        }, 5000);
+        setTimeout(() => {
+          if (imageId) fetchSceneGraph(imageId);
+        }, 10000);
       }
     } catch (err) {
       console.error("Failed to execute AI region edit:", err);
@@ -766,20 +895,26 @@ export default function StudioPage() {
 
 
 
-  const handleDownloadRender = async () => {
+  const handleDownloadRender = () => {
     if (!activeUser) {
       setShowAuthModal(true);
       return;
     }
+    setShowDownloadConfirmModal(true);
+  };
+
+  const executeDownloadRender = async () => {
+    if (!activeUser) return;
+    setIsDownloading(true);
     try {
-      const res = await fetch(`http://localhost:8000/api/v1/users/${activeUser.id}/deduct-download`, { method: "POST" });
+      const res = await fetch(`${API_BASE}/api/v1/users/${activeUser.id}/deduct-download`, { method: "POST" });
       if (res.ok) {
         const updatedUser: User = await res.json();
         setActiveUser(updatedUser);
         showToast(`Download used 50 credits. ${updatedUser.credits} left.`, "Download", "success");
 
         // Trigger robust cross-origin browser blob download
-        const targetUrl = sceneGraph?.image_url || "http://localhost:8000/uploads/demo_render_01.jpg";
+        const targetUrl = sceneGraph?.image_url || `${API_BASE}/uploads/demo_render_01.jpg`;
         const imgRes = await fetch(targetUrl);
         const blob = await imgRes.blob();
         const blobUrl = URL.createObjectURL(blob);
@@ -790,13 +925,18 @@ export default function StudioPage() {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(blobUrl);
+        setShowDownloadConfirmModal(false);
       } else {
         const errData = await res.json();
         showToast(errData.detail || "Not enough credits (50 needed).", "Credits", "info");
+        setShowDownloadConfirmModal(false);
         setViewMode("pricing");
       }
     } catch (err) {
       console.error("Download failed:", err);
+      showToast("Download failed. Please try again.", "Download", "info");
+    } finally {
+      setIsDownloading(false);
     }
   };
 
@@ -990,12 +1130,12 @@ export default function StudioPage() {
               </button>
 
               <button
-                onClick={() => fetchSceneGraph(imageId)}
-                disabled={!hasOpenProject}
+                onClick={handleRefreshDetection}
+                disabled={!hasOpenProject || isRefreshingDetection}
                 className="p-1 text-[#64748B] hover:text-[#4F46E5] hover:bg-slate-50 border border-transparent hover:border-[#E2E8F0] rounded-md transition-all disabled:opacity-30 shrink-0"
-                title="Refresh design"
+                title="Refresh design and run object detection"
               >
-                <RefreshCw className="w-3 h-3" />
+                <RefreshCw className={`w-3 h-3 ${isRefreshingDetection ? "animate-spin text-[#4F46E5]" : ""}`} />
               </button>
 
               <button
@@ -1109,6 +1249,7 @@ export default function StudioPage() {
           onDeleteProject={handleDeleteProject}
           onDuplicateProject={handleDuplicateProject}
           onOpenAuthModal={() => setShowAuthModal(true)}
+          onCreateProject={handleCreateProject}
         />
       ) : viewMode === "account" ? (
         <AccountPage
@@ -1198,12 +1339,15 @@ export default function StudioPage() {
 
           <Inspector
             selectedObject={selectedObject}
+            selectedObjectIds={selectedObjectIds}
+            sceneGraph={sceneGraph}
             imageId={imageId}
             onOrchestratorSuccess={handleOrchestratorSuccess}
             onClassUpdated={handleClassUpdated}
             onObjectDeleted={handleObjectDeleted}
             onOrchestrateStart={() => setIsOrchestrating(true)}
             onOrchestrateEnd={() => setIsOrchestrating(false)}
+            showToast={showToast}
             width={rightWidth}
           />
         </div>
@@ -1311,6 +1455,108 @@ export default function StudioPage() {
         </div>
       )}
 
+      {/* Download Confirmation Modal */}
+      {showDownloadConfirmModal && activeUser && (
+        <div className="fixed inset-0 z-50 bg-[#0F172A]/40 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in select-none">
+          <div className="w-full max-w-md bg-white border border-[#E2E8F0] dark:border-slate-800 rounded-2xl shadow-2xl p-6 overflow-hidden flex flex-col max-h-[90vh] animate-scale-in text-slate-800 font-sans">
+            {/* Modal Header */}
+            <div className="flex items-center space-x-3.5 pb-4 border-b border-[#E2E8F0] bg-white">
+              <div className="w-10 h-10 rounded-xl bg-[#4F46E5]/10 text-[#4F46E5] flex items-center justify-center shadow-sm">
+                <Download className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-[#0F172A]">Confirm HD Download</h3>
+                <p className="text-[11px] text-[#64748B] font-mono">Deduct credits and retrieve design</p>
+              </div>
+            </div>
+
+            {/* Modal Content */}
+            <div className="py-6 space-y-4 text-xs">
+              <p className="text-[#0F172A] leading-relaxed">
+                You are downloading the high-quality render of your room design.
+              </p>
+
+              {/* Warning/Reminder Card */}
+              <div className="p-4 bg-amber-50/70 border border-amber-200 rounded-xl space-y-2 flex items-start space-x-3">
+                <ShieldAlert className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <div className="font-bold text-amber-800">Credit Deduction Warning</div>
+                  <div className="text-[11px] text-amber-700 leading-normal">
+                    This download will cost <strong className="text-amber-900">50 credits</strong>. Once completed, your balance will be updated.
+                  </div>
+                </div>
+              </div>
+
+              {/* Balance Summary Box */}
+              <div className="p-4 bg-slate-50 border border-[#E2E8F0] rounded-xl space-y-2.5 font-mono text-[11px]">
+                <div className="flex justify-between items-center text-[#64748B]">
+                  <span>Current Balance:</span>
+                  <span className="font-bold text-[#0F172A]">{activeUser.credits ?? 0} credits</span>
+                </div>
+                <div className="flex justify-between items-center text-[#64748B]">
+                  <span>Download Cost:</span>
+                  <span className="font-bold text-red-600">-50 credits</span>
+                </div>
+                <div className="h-[1px] bg-[#E2E8F0]" />
+                <div className="flex justify-between items-center pt-0.5">
+                  <span className="text-[#0F172A] font-bold">Projected Remaining:</span>
+                  <span className={`font-bold ${((activeUser.credits ?? 0) - 50 < 0) ? 'text-red-600' : 'text-[#4F46E5]'}`}>
+                    {Math.max(0, (activeUser.credits ?? 0) - 50)} credits
+                  </span>
+                </div>
+              </div>
+
+              {/* Insufficient Credits warning */}
+              {((activeUser.credits ?? 0) < 50) && (
+                <div className="p-3 bg-red-50 border border-red-200 text-red-800 rounded-xl text-xs font-semibold flex items-center space-x-2">
+                  <Info className="w-4 h-4 text-red-600 shrink-0" />
+                  <span>You do not have enough credits (50 required).</span>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer Actions */}
+            <div className="flex items-center space-x-3 pt-4 border-t border-[#E2E8F0]">
+              <button
+                type="button"
+                onClick={() => setShowDownloadConfirmModal(false)}
+                className="flex-1 py-2.5 bg-transparent hover:bg-slate-50 border border-[#E2E8F0] text-[#0F172A] rounded-xl text-xs font-semibold transition-all active:scale-[0.98]"
+              >
+                Cancel
+              </button>
+
+              {((activeUser.credits ?? 0) < 50) ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowDownloadConfirmModal(false);
+                    setViewMode("pricing");
+                  }}
+                  className="flex-1 py-2.5 bg-[#4F46E5] hover:bg-[#6366F1] text-white font-bold rounded-xl text-xs flex items-center justify-center space-x-1.5 shadow-md shadow-[#4F46E5]/15 transition-all active:scale-[0.98] border-0"
+                >
+                  <Sparkles className="w-4 h-4 animate-pulse" />
+                  <span>Get More Credits</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={executeDownloadRender}
+                  disabled={isDownloading}
+                  className="flex-1 py-2.5 bg-[#4F46E5] hover:bg-[#6366F1] text-white font-bold rounded-xl text-xs flex items-center justify-center space-x-1.5 shadow-md shadow-[#4F46E5]/15 transition-all disabled:opacity-50 active:scale-[0.98] border-0"
+                >
+                  {isDownloading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Download className="w-4 h-4" />
+                  )}
+                  <span>{isDownloading ? "Downloading..." : "Confirm & Download"}</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Login & Registration Auth Modal */}
       <AuthModal
         isOpen={showAuthModal}
@@ -1320,7 +1566,6 @@ export default function StudioPage() {
           fetchUsers();
           showToast(`Welcome, ${u.name}!`, "Account", "success");
         }}
-
       />
     </div>
   );

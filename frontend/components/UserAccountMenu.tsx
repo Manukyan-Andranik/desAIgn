@@ -53,10 +53,10 @@ export default function UserAccountMenu({
         aria-haspopup="menu"
       >
         {activeUser.avatar ? (
-          <img src={activeUser.avatar} alt={activeUser.name} className="w-5 h-5 rounded-full object-cover border border-[#E2E8F0]" />
+          <img src={activeUser.avatar} alt={activeUser.name} className="w-6 h-6 rounded-lg object-cover border-2 border-[#4F46E5] ring-2 ring-[#4F46E5]/15 shadow-sm" />
         ) : (
-          <div className="w-5 h-5 rounded-full bg-[#4F46E5]/10 text-[#4F46E5] border border-[#E2E8F0] flex items-center justify-center text-[10px] font-bold">
-            <UserIcon className="w-3 h-3" />
+          <div className="w-6 h-6 rounded-lg bg-[#4F46E5]/10 text-[#4F46E5] border-2 border-[#4F46E5] ring-2 ring-[#4F46E5]/15 flex items-center justify-center text-[10px] font-bold shadow-sm">
+            <UserIcon className="w-3.5 h-3.5" />
           </div>
         )}
         <div className="text-left hidden md:block min-w-0">
@@ -77,10 +77,10 @@ export default function UserAccountMenu({
             <div className="p-3.5 bg-slate-50 rounded-xl border border-[#E2E8F0] space-y-2.5">
               <div className="flex items-center space-x-3">
                 {activeUser.avatar ? (
-                  <img src={activeUser.avatar} alt={activeUser.name} className="w-9 h-9 rounded-full object-cover border border-[#E2E8F0] shadow-sm" />
+                  <img src={activeUser.avatar} alt={activeUser.name} className="w-11 h-11 rounded-xl object-cover border-2 border-[#4F46E5] ring-4 ring-[#4F46E5]/10 shadow-md" />
                 ) : (
-                  <div className="w-9 h-9 rounded-full bg-[#4F46E5]/10 text-[#4F46E5] border border-[#E2E8F0] flex items-center justify-center font-bold text-sm">
-                    <UserIcon className="w-4 h-4" />
+                  <div className="w-11 h-11 rounded-xl bg-[#4F46E5]/10 text-[#4F46E5] border-2 border-[#4F46E5] ring-4 ring-[#4F46E5]/10 flex items-center justify-center font-bold text-base shadow-md">
+                    <UserIcon className="w-5 h-5" />
                   </div>
                 )}
                 <div className="truncate">
@@ -139,9 +139,11 @@ export default function UserAccountMenu({
                     >
                       <div className="flex items-center space-x-2.5 truncate">
                         {u.avatar ? (
-                          <img src={u.avatar} alt={u.name} className="w-4 h-4 rounded-full object-cover" />
+                          <img src={u.avatar} alt={u.name} className="w-5 h-5 rounded-md object-cover border border-[#E2E8F0]" />
                         ) : (
-                          <UserIcon className="w-3.5 h-3.5 text-[#64748B]" />
+                          <div className="w-5 h-5 rounded-md bg-slate-100 flex items-center justify-center border border-[#E2E8F0]">
+                            <UserIcon className="w-3 h-3 text-[#64748B]" />
+                          </div>
                         )}
                         <span className="truncate text-xs font-medium">{u.name}</span>
                       </div>

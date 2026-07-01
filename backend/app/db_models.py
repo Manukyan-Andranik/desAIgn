@@ -83,6 +83,7 @@ class OrchestrationHistoryRecord(Base):
     prompt = Column(Text, nullable=False)
     action_type = Column(String, nullable=False)
     target_material = Column(String, nullable=True)
+    image_url = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     scene_graph = relationship("SceneGraphRecord", back_populates="history")

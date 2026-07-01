@@ -2,7 +2,7 @@ import os
 import uuid
 import io
 import urllib.parse
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends, Query
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends, Query, BackgroundTasks
 from sqlalchemy.orm import Session
 from typing import Optional
 from PIL import Image
@@ -15,7 +15,7 @@ from app.models import (
     UpdateObjectClassRequest, MergeObjectsRequest, AddCustomObjectRequest,
     DetectionResponse, DetectedObjectItem, SegmentSceneResponse, SegmentSceneItem, InteriorSegmentationResponse,
     PromptGenerationRequest, PromptGenerationResponse,
-    FrameGenerationRequest, FrameGenerationResponse, RegionAIEditRequest
+    FrameGenerationRequest, FrameGenerationResponse, RegionAIEditRequest, HistoryItemSchema, RestoreUrlRequest
 )
 from app.vision import process_uploaded_image
 from app.detector import object_detector
@@ -70,7 +70,8 @@ async def analyze_render(
         filepath = os.path.join(UPLOADS_DIR, filename)
         with open(filepath, "wb") as f:
             f.write(file_bytes)
-        image_url = f"http://localhost:8000/uploads/{filename}"
+        backend_base = os.getenv("BACKEND_API", "http://localhost:8000")
+        image_url = f"{backend_base}/uploads/{filename}"
 
     scene_graph = process_uploaded_image(
         file_bytes=file_bytes,
@@ -277,7 +278,11 @@ def add_custom_object(req: AddCustomObjectRequest, db: Session = Depends(get_db)
 
 
 @router.post("/api/v1/object/ai-edit")
-async def ai_edit_region(req: RegionAIEditRequest, db: Session = Depends(get_db)):
+async def ai_edit_region(
+    req: RegionAIEditRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
     scene_graph = load_scene_graph_from_db(db, req.image_id)
     clean_name = req.object_name.strip().lower()
     
@@ -317,13 +322,33 @@ async def ai_edit_region(req: RegionAIEditRequest, db: Session = Depends(get_db)
         image_path=scene_graph.image_url or "default",
         target_object=new_obj,
         action=mock_action,
-        user_prompt=req.prompt.strip()
+        user_prompt=req.prompt.strip(),
+        image_id=scene_graph.image_id
     )
     
     new_img_url = gen_result.get("generated_image_url")
     if new_img_url:
         scene_graph.image_url = new_img_url
+        from app.database import SessionLocal
+        background_tasks.add_task(
+            detect_objects_in_background,
+            scene_graph.image_id,
+            new_img_url,
+            scene_graph.room_type,
+            scene_graph.design_style,
+            SessionLocal
+        )
         
+    history_rec = db_models.OrchestrationHistoryRecord(
+        scene_graph_id=req.image_id,
+        target_id=new_obj.id,
+        prompt=req.prompt.strip(),
+        action_type="modify_style",
+        target_material=req.prompt.strip(),
+        image_url=new_img_url or scene_graph.image_url
+    )
+    db.add(history_rec)
+
     save_scene_graph_to_db(db, scene_graph)
     save_user_correction(clean_name, clean_name)
     
@@ -336,15 +361,44 @@ async def ai_edit_region(req: RegionAIEditRequest, db: Session = Depends(get_db)
 
 
 @router.post("/api/v1/orchestrate", response_model=OrchestratorResponse)
-async def orchestrate_prompt(request: OrchestratorRequest, db: Session = Depends(get_db)):
+async def orchestrate_prompt(
+    request: OrchestratorRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
     scene_graph = load_scene_graph_from_db(db, request.image_id)
     target_ids = request.target_ids if request.target_ids else ([request.target_id] if request.target_id else [])
     
-    target_objs = [obj for obj in scene_graph.objects if obj.id in target_ids]
-    if not target_objs and scene_graph.objects:
-        target_objs = [scene_graph.objects[0]]
+    no_selection = (len(target_ids) == 0)
+    all_selected = (len(target_ids) == len(scene_graph.objects) and len(scene_graph.objects) > 0)
+    
+    if no_selection or all_selected:
+        w = scene_graph.width or 1920
+        h = scene_graph.height or 1080
+        from app.models import Point
+        whole_image_obj = SceneObject(
+            id="all_image",
+            **{"class": "entire room"},
+            bbox=[0, 0, w, h],
+            confidence=1.0,
+            depth=1.0,
+            material="various",
+            editable=True,
+            polygon=[
+                Point(x=0, y=0),
+                Point(x=w, y=0),
+                Point(x=w, y=h),
+                Point(x=0, y=h)
+            ]
+        )
+        primary_target = whole_image_obj
+        target_objs = [whole_image_obj]
+    else:
+        target_objs = [obj for obj in scene_graph.objects if obj.id in target_ids]
+        if not target_objs and scene_graph.objects:
+            target_objs = [scene_graph.objects[0]]
+        primary_target = target_objs[0] if target_objs else None
 
-    primary_target = target_objs[0] if target_objs else None
     if not primary_target:
         raise HTTPException(status_code=404, detail="No valid target objects found for orchestration.")
 
@@ -354,7 +408,8 @@ async def orchestrate_prompt(request: OrchestratorRequest, db: Session = Depends
         image_path=scene_graph.image_url or "default",
         target_object=primary_target,
         action=response.action,
-        user_prompt=request.prompt
+        user_prompt=request.prompt,
+        image_id=scene_graph.image_id
     )
 
     new_img_url = gen_result.get("generated_image_url")
@@ -365,14 +420,24 @@ async def orchestrate_prompt(request: OrchestratorRequest, db: Session = Depends
         target_id=primary_target.id,
         prompt=request.prompt,
         action_type=response.action.action,
-        target_material=response.action.material
+        target_material=response.action.material,
+        image_url=new_img_url or scene_graph.image_url
     )
     db.add(history_rec)
 
     if response.updated_object or new_img_url:
         if new_img_url:
             scene_graph.image_url = new_img_url
-        if response.updated_object:
+            from app.database import SessionLocal
+            background_tasks.add_task(
+                detect_objects_in_background,
+                scene_graph.image_id,
+                new_img_url,
+                scene_graph.room_type,
+                scene_graph.design_style,
+                SessionLocal
+            )
+        if response.updated_object and primary_target.id != "all_image":
             for idx, obj in enumerate(scene_graph.objects):
                 if obj.id in target_ids or obj.id == primary_target.id:
                     scene_graph.objects[idx] = response.updated_object
@@ -519,3 +584,131 @@ async def generate_prompt_endpoint(request: PromptGenerationRequest):
 @router.post("/api/v1/generate-frame", response_model=FrameGenerationResponse)
 def generate_frame_endpoint(request: FrameGenerationRequest):
     return generative_engine.generate_frames(request)
+
+
+@router.post("/api/v1/scene-graph/{image_id}/refresh-detection", response_model=SceneGraph)
+def refresh_scene_graph_detection(image_id: str, db: Session = Depends(get_db)):
+    """
+    Manually triggers the 5-stage vision pipeline on the existing image associated with
+    the scene graph, overwriting the scene graph objects with newly detected ones.
+    """
+    scene_graph = load_scene_graph_from_db(db, image_id)
+    if not scene_graph:
+        raise HTTPException(status_code=404, detail="Scene graph not found.")
+
+    image_url = scene_graph.image_url
+    uploads_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "..", "static", "uploads")
+    if image_url and "uploads/" in image_url:
+        fname = urllib.parse.unquote(image_url.split("uploads/")[-1].split("?")[0])
+        filepath = os.path.join(uploads_dir, fname)
+    else:
+        filepath = os.path.join(uploads_dir, "default.jpg")
+
+    if not os.path.exists(filepath):
+        filepath = os.path.join(uploads_dir, "default.jpg")
+        if not os.path.exists(filepath):
+            raise HTTPException(status_code=404, detail="Source image file not found on disk.")
+
+    try:
+        with open(filepath, "rb") as f:
+            file_bytes = f.read()
+
+        new_scene_graph = process_uploaded_image(
+            file_bytes=file_bytes,
+            image_id=image_id,
+            image_url=image_url,
+            room_type=scene_graph.room_type or "Living Room",
+            design_style=scene_graph.design_style or "Japandi Minimalist"
+        )
+        save_scene_graph_to_db(db, new_scene_graph)
+        return new_scene_graph
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to refresh object detection: {str(e)}")
+
+
+@router.get("/api/v1/scene-graph/{image_id}/history", response_model=list[HistoryItemSchema])
+def get_scene_graph_history(image_id: str, db: Session = Depends(get_db)):
+    """
+    Retrieves all logged orchestration/prompt history steps for the given image_id,
+    sorted chronologically.
+    """
+    history_items = db.query(db_models.OrchestrationHistoryRecord).filter(
+        db_models.OrchestrationHistoryRecord.scene_graph_id == image_id
+    ).order_by(db_models.OrchestrationHistoryRecord.created_at.asc()).all()
+
+    output = []
+    for item in history_items:
+        output.append(HistoryItemSchema(
+            id=item.id,
+            scene_graph_id=item.scene_graph_id,
+            target_id=item.target_id,
+            prompt=item.prompt,
+            action_type=item.action_type,
+            target_material=item.target_material,
+            image_url=item.image_url,
+            created_at=item.created_at
+        ))
+    return output
+
+
+@router.post("/api/v1/scene-graph/{image_id}/restore-url", response_model=SceneGraph)
+def restore_scene_graph_url(image_id: str, req: RestoreUrlRequest, db: Session = Depends(get_db)):
+    """
+    Overwrites the current scene graph image URL to match a historical state image URL.
+    """
+    scene_graph = load_scene_graph_from_db(db, image_id)
+    if not scene_graph:
+        raise HTTPException(status_code=404, detail="Scene graph not found.")
+    scene_graph.image_url = req.image_url
+    scene_graph.version += 1
+    save_scene_graph_to_db(db, scene_graph)
+    return scene_graph
+
+
+def detect_objects_in_background(
+    image_id: str,
+    new_image_url: str,
+    room_type: str,
+    design_style: str,
+    db_session_maker
+):
+    """
+    Background worker that runs the 5-stage vision pipeline on the newly edited image
+    to discover new objects and update the scene graph.
+    """
+    import os
+    import urllib.parse
+    from app.vision import process_uploaded_image
+    from app.services import save_scene_graph_to_db
+    from app.logger import log_action
+
+    uploads_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "..", "static", "uploads")
+    if "uploads/" in new_image_url:
+        fname = urllib.parse.unquote(new_image_url.split("uploads/")[-1].split("?")[0])
+        filepath = os.path.join(uploads_dir, fname)
+    else:
+        return
+
+    if not os.path.exists(filepath):
+        return
+
+    try:
+        with open(filepath, "rb") as f:
+            file_bytes = f.read()
+
+        db = db_session_maker()
+        try:
+            log_action("BACKGROUND_DETECTION_START", f"Starting background object detection on '{image_id}'...")
+            new_scene_graph = process_uploaded_image(
+                file_bytes=file_bytes,
+                image_id=image_id,
+                image_url=new_image_url,
+                room_type=room_type,
+                design_style=design_style
+            )
+            save_scene_graph_to_db(db, new_scene_graph)
+            log_action("BACKGROUND_DETECTION_SUCCESS", f"Successfully re-detected objects for image '{image_id}' in background.")
+        finally:
+            db.close()
+    except Exception as e:
+        log_action("BACKGROUND_DETECTION_ERROR", f"Failed background object detection: {e}", level="ERROR")

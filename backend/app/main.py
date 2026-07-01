@@ -77,18 +77,79 @@ app = FastAPI(
 def on_startup():
     run_db_migrations()
 
+# Define allowed origins for CORS to prevent browser rejection when credentials are enabled
+origins = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+]
+
+# Dynamically add endpoints from environment variables if configured
+frontend_api = os.getenv("FRONTEND_API")
+if frontend_api:
+    origins.append(frontend_api)
+backend_api = os.getenv("BACKEND_API")
+if backend_api:
+    origins.append(backend_api)
+
+# Normalize origins (strip trailing slashes, remove duplicates)
+origins = list(set([o.rstrip("/") for o in origins if o]))
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+
+# Custom StaticFiles subclass to force CORS headers on all static file responses.
+# This prevents Chrome from caching a header-less version of an image when first loaded
+# via a simple <img> tag, which would otherwise block subsequent canvas/CORS fetches.
+class CORSStaticFiles(StaticFiles):
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        
+        # Safely extract ASGI scope to inspect headers
+        scope = kwargs.get("scope")
+        if not scope and len(args) >= 3:
+            scope = args[2]
+            
+        # Parse the origin from the request headers inside ASGI scope
+        origin = None
+        if scope:
+            for k, v in scope.get("headers", []):
+                if k == b"origin":
+                    origin = v.decode("utf-8")
+                    break
+                
+        allowed_origins = [
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+            "http://localhost:8000",
+            "http://127.0.0.1:8000",
+        ]
+        frontend_api = os.getenv("FRONTEND_API")
+        if frontend_api:
+            allowed_origins.append(frontend_api.rstrip("/"))
+            
+        allowed_origins = [o.rstrip("/") for o in allowed_origins if o]
+        
+        if origin and origin.rstrip("/") in allowed_origins:
+            response.headers["Access-Control-Allow-Origin"] = origin
+        else:
+            response.headers["Access-Control-Allow-Origin"] = frontend_api.rstrip("/") if frontend_api else "http://localhost:3000"
+            
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Vary"] = "Origin"
+        return response
+
 # Static files directory for uploaded renders
 UPLOADS_DIR = os.path.join(os.path.dirname(__file__), "..", "static", "uploads")
 os.makedirs(UPLOADS_DIR, exist_ok=True)
-app.mount("/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")
+app.mount("/uploads", CORSStaticFiles(directory=UPLOADS_DIR), name="uploads")
 
 # Include Modular APIRouters: User, Public, Admin, Auth
 app.include_router(auth.router)

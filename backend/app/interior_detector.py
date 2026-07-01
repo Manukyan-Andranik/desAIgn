@@ -171,36 +171,59 @@ def clear_gpu_memory():
 
 class InteriorSegmentationPipeline:
     def __init__(self):
+        import threading
         self.device = "cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu")
         self.m2f_processor = None
         self.m2f_model = None
         self.yolo_model = None
+        self.model_available = HAS_TRANSFORMERS or HAS_YOLO
+        self._loaded = False
+        self._lock = threading.Lock()
 
-        print(f"[InteriorPipeline] Initializing ultra-robust pipeline on {self.device}")
-
-        # Load Mask2Former ADE20K
-        if HAS_TRANSFORMERS:
-            try:
-                model_id = "facebook/mask2former-swin-base-ade-semantic"
+    def _load_model(self):
+        """Thread-safe lazy loading of Mask2Former and YOLOv8-Seg models."""
+        if self._loaded:
+            return
+        with self._lock:
+            if self._loaded:
+                return
+            print(f"[InteriorPipeline] Lazy initializing ultra-robust pipeline on {self.device}")
+            # Load Mask2Former ADE20K
+            if HAS_TRANSFORMERS:
                 try:
-                    self.m2f_processor = AutoImageProcessor.from_pretrained(model_id)
-                    self.m2f_model = Mask2FormerForUniversalSegmentation.from_pretrained(model_id).to(self.device)
-                    print(f"[InteriorPipeline] Loaded High-Precision Swin-Base ADE20K ({model_id})")
-                except Exception:
-                    model_id = "facebook/mask2former-swin-tiny-ade-semantic"
-                    self.m2f_processor = AutoImageProcessor.from_pretrained(model_id)
-                    self.m2f_model = Mask2FormerForUniversalSegmentation.from_pretrained(model_id).to(self.device)
-                    print(f"[InteriorPipeline] Loaded Swin-Tiny ADE20K ({model_id})")
-                self.m2f_model.eval()
-            except Exception as e:
-                print(f"[InteriorPipeline] Mask2Former error: {e}")
+                    import torch
+                    try:
+                        torch.set_num_threads(1)
+                        torch.set_num_interop_threads(1)
+                    except RuntimeError:
+                        pass
+                    model_id = "facebook/mask2former-swin-base-ade-semantic"
+                    try:
+                        self.m2f_processor = AutoImageProcessor.from_pretrained(model_id)
+                        self.m2f_model = Mask2FormerForUniversalSegmentation.from_pretrained(model_id).to(self.device)
+                        print(f"[InteriorPipeline] Loaded High-Precision Swin-Base ADE20K ({model_id})")
+                    except Exception:
+                        model_id = "facebook/mask2former-swin-tiny-ade-semantic"
+                        self.m2f_processor = AutoImageProcessor.from_pretrained(model_id)
+                        self.m2f_model = Mask2FormerForUniversalSegmentation.from_pretrained(model_id).to(self.device)
+                        print(f"[InteriorPipeline] Loaded Swin-Tiny ADE20K ({model_id})")
+                    self.m2f_model.eval()
+                except Exception as e:
+                    print(f"[InteriorPipeline] Mask2Former error: {e}")
 
-        if HAS_YOLO:
-            try:
-                self.yolo_model = YOLO("yolov8x-seg.pt")
-                print(f"[InteriorPipeline] Loaded YOLOv8x-seg model")
-            except Exception as e:
-                print(f"[InteriorPipeline] YOLO error: {e}")
+            if HAS_YOLO:
+                try:
+                    import torch
+                    try:
+                        torch.set_num_threads(1)
+                        torch.set_num_interop_threads(1)
+                    except RuntimeError:
+                        pass
+                    self.yolo_model = YOLO("yolov8x-seg.pt")
+                    print(f"[InteriorPipeline] Loaded YOLOv8x-seg model")
+                except Exception as e:
+                    print(f"[InteriorPipeline] YOLO error: {e}")
+            self._loaded = True
 
     def segment_room(
         self,
@@ -217,6 +240,8 @@ class InteriorSegmentationPipeline:
             return [], 0.0
 
         results_out: List[InteriorObjectInstance] = []
+
+        self._load_model()
 
         log_action("INTERIOR_DETECTOR_START", f"Segmenting room render '{image_id}' ({width}x{height})")
 

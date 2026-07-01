@@ -30,31 +30,46 @@ class DepthEstimator:
     Generates a per-pixel depth map and extracts per-object depth values.
     """
     def __init__(self):
+        import threading
         self.model = None
         self.processor = None
         self.device = "cpu"  # CPU for MPS compatibility (depth models have limited MPS op support)
+        self.model_available = HAS_DEPTH
+        self._lock = threading.Lock()
 
-        log_action("DEPTH_INIT_START", "Initializing Depth Anything V2 estimator")
-
-        if not HAS_DEPTH:
-            log_action("DEPTH_INIT_WARN", "transformers package not available for depth estimation")
+    def _load_model(self):
+        """Thread-safe lazy loading of Depth Anything V2 weights."""
+        if self.model is not None:
             return
-
-        try:
-            model_id = "depth-anything/Depth-Anything-V2-Small-hf"
-            self.processor = AutoImageProcessor.from_pretrained(model_id)
-            self.model = AutoModelForDepthEstimation.from_pretrained(model_id)
-            self.model.to(self.device)
-            self.model.eval()
-            log_action("DEPTH_INIT_SUCCESS", f"Depth Anything V2 Small loaded on {self.device}")
-        except Exception as e:
-            log_action("DEPTH_INIT_ERROR", f"Depth Anything V2 init failed: {e}")
+        with self._lock:
+            if self.model is not None:
+                return
+            log_action("DEPTH_INIT_START", "Lazy loading Depth Anything V2 estimator")
+            if not HAS_DEPTH:
+                log_action("DEPTH_INIT_WARN", "transformers package not available for depth estimation")
+                return
+            try:
+                # Apply thread constraints inside Python dynamically
+                try:
+                    torch.set_num_threads(1)
+                    torch.set_num_interop_threads(1)
+                except RuntimeError:
+                    pass
+                model_id = "depth-anything/Depth-Anything-V2-Small-hf"
+                self.processor = AutoImageProcessor.from_pretrained(model_id)
+                self.model = AutoModelForDepthEstimation.from_pretrained(model_id)
+                self.model.to(self.device)
+                self.model.eval()
+                log_action("DEPTH_INIT_SUCCESS", f"Depth Anything V2 Small loaded on {self.device}")
+            except Exception as e:
+                log_action("DEPTH_INIT_ERROR", f"Depth Anything V2 init failed: {e}")
 
     def estimate_depth_map(self, file_bytes: bytes) -> Optional[np.ndarray]:
         """
         Generate a normalized depth map from raw image bytes.
         Returns: depth_map as np.ndarray (H, W) with values 0.0-1.0, or None on failure.
         """
+        self._load_model()
         if not self.model or not self.processor or not file_bytes:
             return None
 

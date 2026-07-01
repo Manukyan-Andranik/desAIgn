@@ -89,10 +89,10 @@ class AntigravityVisionPipeline:
         self.sam = sam_segmentor
         self.depth = depth_estimator
 
-        # Check which models are available
-        self.has_gdino = self.gdino.model is not None
-        self.has_sam = self.sam.predictor is not None
-        self.has_depth = self.depth.model is not None
+        # Check which models are available without triggering lazy-loading
+        self.has_gdino = getattr(self.gdino, "model_available", False)
+        self.has_sam = getattr(self.sam, "model_available", False)
+        self.has_depth = getattr(self.depth, "model_available", False)
 
         log_action("PIPELINE_INIT", f"Multi-Model Pipeline: GDINO={self.has_gdino} SAM={self.has_sam} Depth={self.has_depth}")
 

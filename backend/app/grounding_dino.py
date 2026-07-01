@@ -83,25 +83,39 @@ class GroundingDINODetector:
     Detects interior architectural elements via natural language text prompts.
     """
     def __init__(self):
+        import threading
         self.device = "cpu"  # GDINO on MPS has limited op support; CPU is stable
         self.model = None
         self.processor = None
+        self.model_available = HAS_TRANSFORMERS_GDINO
+        self._lock = threading.Lock()
 
-        log_action("GDINO_INIT_START", f"Initializing Grounding DINO detector (target device: cpu)")
-
-        if not HAS_TRANSFORMERS_GDINO:
-            log_action("GDINO_INIT_WARN", "transformers not installed. Grounding DINO unavailable.")
+    def _load_model(self):
+        """Thread-safe lazy loading of Grounding DINO model weights."""
+        if self.model is not None:
             return
-
-        try:
-            model_id = settings.GDINO_MODEL_ID
-            self.processor = AutoProcessor.from_pretrained(model_id)
-            self.model = AutoModelForZeroShotObjectDetection.from_pretrained(model_id)
-            self.model.to(self.device)
-            self.model.eval()
-            log_action("GDINO_INIT_SUCCESS", f"Loaded Grounding DINO Base ({model_id}) via HuggingFace Transformers ({self.device})")
-        except Exception as e:
-            log_action("GDINO_INIT_ERROR", f"Grounding DINO init failed: {e}")
+        with self._lock:
+            if self.model is not None:
+                return
+            log_action("GDINO_INIT_START", "Lazy loading Grounding DINO detector (target device: cpu)")
+            if not HAS_TRANSFORMERS_GDINO:
+                log_action("GDINO_INIT_WARN", "transformers not installed. Grounding DINO unavailable.")
+                return
+            try:
+                # Apply thread constraints inside Python dynamically
+                try:
+                    torch.set_num_threads(1)
+                    torch.set_num_interop_threads(1)
+                except RuntimeError:
+                    pass
+                model_id = settings.GDINO_MODEL_ID
+                self.processor = AutoProcessor.from_pretrained(model_id)
+                self.model = AutoModelForZeroShotObjectDetection.from_pretrained(model_id)
+                self.model.to(self.device)
+                self.model.eval()
+                log_action("GDINO_INIT_SUCCESS", f"Loaded Grounding DINO Base ({model_id}) via HuggingFace Transformers ({self.device})")
+            except Exception as e:
+                log_action("GDINO_INIT_ERROR", f"Grounding DINO init failed: {e}")
 
     def detect(
         self,
@@ -128,6 +142,8 @@ class GroundingDINODetector:
         """
         start_time = time.time()
         detections: List[Dict[str, Any]] = []
+
+        self._load_model()
 
         if not self.model or not self.processor or not file_bytes:
             return detections, 0.0

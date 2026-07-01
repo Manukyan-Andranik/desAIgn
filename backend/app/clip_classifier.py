@@ -77,25 +77,39 @@ class CLIPMaterialClassifier:
     Zero-Shot Vision-Language Classifier for interior objects, materials, and styles.
     """
     def __init__(self):
+        import threading
         self.device = "cpu"  # CPU for cross-platform stability
         self.model = None
         self.processor = None
+        self.model_available = HAS_CLIP
+        self._lock = threading.Lock()
 
-        log_action("CLIP_INIT_START", "Initializing OpenCLIP zero-shot material classifier")
-
-        if not HAS_CLIP:
-            log_action("CLIP_INIT_WARN", "transformers CLIP not available.")
+    def _load_model(self):
+        """Thread-safe lazy loading of OpenCLIP model weights."""
+        if self.model is not None:
             return
-
-        try:
-            model_id = "openai/clip-vit-base-patch32"
-            self.processor = CLIPProcessor.from_pretrained(model_id)
-            self.model = CLIPModel.from_pretrained(model_id)
-            self.model.to(self.device)
-            self.model.eval()
-            log_action("CLIP_INIT_SUCCESS", f"Loaded OpenCLIP model ({model_id}) on {self.device}")
-        except Exception as e:
-            log_action("CLIP_INIT_ERROR", f"CLIP initialization failed: {e}")
+        with self._lock:
+            if self.model is not None:
+                return
+            log_action("CLIP_INIT_START", "Lazy loading OpenCLIP zero-shot material classifier")
+            if not HAS_CLIP:
+                log_action("CLIP_INIT_WARN", "transformers CLIP not available.")
+                return
+            try:
+                # Apply thread constraints inside Python dynamically
+                try:
+                    torch.set_num_threads(1)
+                    torch.set_num_interop_threads(1)
+                except RuntimeError:
+                    pass
+                model_id = "openai/clip-vit-base-patch32"
+                self.processor = CLIPProcessor.from_pretrained(model_id)
+                self.model = CLIPModel.from_pretrained(model_id)
+                self.model.to(self.device)
+                self.model.eval()
+                log_action("CLIP_INIT_SUCCESS", f"Loaded OpenCLIP model ({model_id}) on {self.device}")
+            except Exception as e:
+                log_action("CLIP_INIT_ERROR", f"CLIP initialization failed: {e}")
 
     def classify_object_crops(
         self,
@@ -105,16 +119,17 @@ class CLIPMaterialClassifier:
     ) -> List[Dict[str, Any]]:
         """
         Classify materials, styles, and extract dominant colors for detected object regions.
-        
+
         Args:
-            file_bytes: Raw full render image bytes
+            file_bytes: Raw fill render image bytes
             detections: List of detection dictionaries with 'bbox' and 'class' keys
             image_id: Image identifier for telemetry logging
-            
+
         Returns:
             Enhanced detections with 'classified_material', 'style', and 'color_hex'.
         """
         start_time = time.time()
+        self._load_model()
         log_action("CLIP_CLASSIFY_START", f"Running Zero-Shot CLIP classification on {len(detections)} crops for '{image_id}'")
 
         try:

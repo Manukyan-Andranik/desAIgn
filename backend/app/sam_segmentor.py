@@ -89,25 +89,39 @@ class SAMSegmentor:
     Takes bounding boxes from Grounding DINO and generates exact polygon masks.
     """
     def __init__(self, model_type: str = "vit_b"):
+        import threading
         self.model_type = model_type
         self.predictor = None
         self.device = "cpu"  # SAM on MPS can be unstable; CPU is safer and still fast
+        self.model_available = HAS_SAM
+        self._lock = threading.Lock()
 
-        log_action("SAM_INIT_START", f"Initializing SAM {model_type} segmentor")
-
-        if not HAS_SAM:
-            log_action("SAM_INIT_WARN", "segment-anything package not installed")
+    def _load_model(self):
+        """Thread-safe lazy loading of SAM model weights."""
+        if self.predictor is not None:
             return
-
-        try:
-            checkpoint_path = download_sam_checkpoint(model_type)
-            sam = sam_model_registry[model_type](checkpoint=checkpoint_path)
-            sam.to(self.device)
-            sam.eval()
-            self.predictor = SamPredictor(sam)
-            log_action("SAM_INIT_SUCCESS", f"SAM {model_type} loaded on {self.device}")
-        except Exception as e:
-            log_action("SAM_INIT_ERROR", f"SAM initialization failed: {e}")
+        with self._lock:
+            if self.predictor is not None:
+                return
+            log_action("SAM_INIT_START", f"Lazy loading SAM {self.model_type} segmentor")
+            if not HAS_SAM:
+                log_action("SAM_INIT_WARN", "segment-anything package not installed")
+                return
+            try:
+                # Apply thread constraints inside Python dynamically
+                try:
+                    torch.set_num_threads(1)
+                    torch.set_num_interop_threads(1)
+                except RuntimeError:
+                    pass
+                checkpoint_path = download_sam_checkpoint(self.model_type)
+                sam = sam_model_registry[self.model_type](checkpoint=checkpoint_path)
+                sam.to(self.device)
+                sam.eval()
+                self.predictor = SamPredictor(sam)
+                log_action("SAM_INIT_SUCCESS", f"SAM {self.model_type} loaded on {self.device}")
+            except Exception as e:
+                log_action("SAM_INIT_ERROR", f"SAM initialization failed: {e}")
 
     def segment(
         self,
@@ -117,16 +131,18 @@ class SAMSegmentor:
     ) -> List[Dict[str, Any]]:
         """
         Generate pixel-perfect masks for each detection.
-        
+
         Args:
             file_bytes: Raw image bytes
             detections: List of dicts from Grounding DINO with 'bbox' key [x1,y1,x2,y2]
             image_id: Image identifier for logging
-            
+
         Returns:
             Enhanced detections with added 'polygon', 'mask_area', and 'mask_rle' fields.
         """
         start_time = time.time()
+
+        self._load_model()
 
         if not self.predictor or not file_bytes or not detections:
             # Fallback: convert bounding boxes to rectangle polygons

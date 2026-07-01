@@ -99,20 +99,36 @@ class YOLOArchitecturalDetector:
     """
 
     def __init__(self):
+        import threading
         self.replicate_token = os.getenv("REPLICATE_API_TOKEN")
         self.model = None
+        self.model_available = HAS_YOLO
+        self._lock = threading.Lock()
 
-        if HAS_YOLO:
-            try:
-                # Extra-large model — maximum accuracy for interior details
-                self.model = YOLO("yolov8x-seg.pt")
-                print("[Detector] Loaded yolov8x-seg.pt (extra-large)")
-            except Exception:
+    def _load_model(self):
+        """Thread-safe lazy loading of YOLOv8-Seg model."""
+        if self.model is not None:
+            return
+        with self._lock:
+            if self.model is not None:
+                return
+            if HAS_YOLO:
                 try:
-                    self.model = YOLO("yolov8m-seg.pt")
-                    print("[Detector] Fallback: loaded yolov8m-seg.pt (medium)")
-                except Exception as e:
-                    print(f"[Detector] Failed to initialize YOLO model: {e}")
+                    import torch
+                    try:
+                        torch.set_num_threads(1)
+                        torch.set_num_interop_threads(1)
+                    except RuntimeError:
+                        pass
+                    # Extra-large model — maximum accuracy for interior details
+                    self.model = YOLO("yolov8x-seg.pt")
+                    print("[Detector] Loaded yolov8x-seg.pt (extra-large)")
+                except Exception:
+                    try:
+                        self.model = YOLO("yolov8m-seg.pt")
+                        print("[Detector] Fallback: loaded yolov8m-seg.pt (medium)")
+                    except Exception as e:
+                        print(f"[Detector] Failed to initialize YOLO model: {e}")
 
     def normalize_class(self, raw_class: str) -> str:
         """Map raw COCO class names to normalized taxonomy labels."""
@@ -140,6 +156,7 @@ class YOLOArchitecturalDetector:
         Only returns interior-relevant objects (skips cars, people, outdoor items).
         Extracts bounding boxes AND neural polygon masks from model tensors.
         """
+        self._load_model()
         if not self.model or not file_bytes:
             return []
 

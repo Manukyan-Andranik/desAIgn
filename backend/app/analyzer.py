@@ -369,6 +369,8 @@ class AntigravityVisionPipeline:
                 sub_components=spec["sub_components"]
             ))
 
+        relationships = sgg_engine.generate_relationships(scene_objects)
+
         log_action("LEGACY_PIPELINE_COMPLETE", f"Legacy pipeline: {len(scene_objects)} objects in {proc_time}ms")
 
         return SceneGraph(
@@ -377,7 +379,8 @@ class AntigravityVisionPipeline:
             width=width,
             height=height,
             version=1,
-            objects=scene_objects
+            objects=scene_objects,
+            relationships=relationships
         )
 
 

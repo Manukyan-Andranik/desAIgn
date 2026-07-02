@@ -55,7 +55,10 @@ export default function Inspector({
     if (!imageId) return;
     setLoadingHistory(true);
     try {
-      const res = await fetch(`${API_BASE}/api/v1/scene-graph/${imageId}/history`);
+      const url = selectedObject && selectedObjectIds.length <= 1
+        ? `${API_BASE}/api/v1/scene-graph/${imageId}/object/${selectedObject.id}/history`
+        : `${API_BASE}/api/v1/scene-graph/${imageId}/history`;
+      const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
         setHistoryItems(data);
@@ -71,7 +74,7 @@ export default function Inspector({
     if (activeTab === "history" && imageId) {
       fetchHistory();
     }
-  }, [activeTab, imageId]);
+  }, [activeTab, imageId, selectedObject?.id]);
 
   const handleRestoreState = async (item: any) => {
     if (!item.image_url) return;
@@ -204,6 +207,8 @@ export default function Inspector({
   };
 
   const presetMaterials = selectedObject ? [
+    { label: "Delete item", prompt: "delete" },
+    { label: "Upgrade image (Upscale)", prompt: "upgrade image: make high quality" },
     { label: "Walnut Wood", prompt: `Replace ${selectedObject.class} with natural walnut wood` },
     { label: "Brass Metal", prompt: `Change ${selectedObject.class} to brushed brass metal` },
     { label: "Bouclé Fabric", prompt: `Upholster ${selectedObject.class} in cream bouclé fabric` },
@@ -365,6 +370,18 @@ export default function Inspector({
                         <span>{selectedObjectIds.length > 1 ? "Batch prompt" : "Global prompt"}</span>
                       </div>
 
+                      {selectedObjectIds.length <= 1 && (
+                        <div className="space-y-1.5 mt-1">
+                          <button
+                            type="button"
+                            onClick={() => setPrompt("upgrade image: make high quality")}
+                            className="w-full px-2.5 py-2 hover:text-[#4F46E5] hover:border-[#4F46E5]/40 border border-[#E2E8F0] rounded-xl text-[11px] text-[#64748B] text-center transition-all duration-200 font-bold bg-slate-50/50 hover:bg-white shadow-sm active:scale-[0.97] flex items-center justify-center gap-1.5"
+                          >
+                            <Wand2 className="w-3.5 h-3.5 text-[#4F46E5]" /> ✨ Upgrade image: Make high quality (Upscale)
+                          </button>
+                        </div>
+                      )}
+
                       <form onSubmit={handleOrchestrate} className="space-y-2 flex-1 flex flex-col justify-between">
                         <textarea
                           value={prompt}
@@ -489,6 +506,78 @@ export default function Inspector({
                     <span className="font-mono text-[#0EA5E9] font-black text-xs">
                       {selectedObject.depth}m
                     </span>
+                  </div>
+                </div>
+
+                {/* 3D Scene Space Hierarchy (Phase 1) */}
+                <div className="p-3 rounded-2xl bg-slate-50/50 border border-[#E2E8F0] text-xs space-y-2.5">
+                  <div className="text-[#64748B] text-[10px] uppercase font-mono font-bold flex items-center gap-1.5">
+                    <Layers className="w-3.5 h-3.5 text-[#4F46E5]" /> 3D Scene Hierarchy
+                  </div>
+                  
+                  <div className="flex flex-col space-y-1.5 font-sans">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-[#64748B]">Parent Layer:</span>
+                      <span className="font-mono text-[#0F172A] font-medium">
+                        {selectedObject.parent ? (
+                          (() => {
+                            const pObj = sceneGraph?.objects.find(o => o.id === selectedObject.parent);
+                            return pObj ? `${pObj.class} (${selectedObject.parent.split("_").pop()})` : selectedObject.parent;
+                          })()
+                        ) : (
+                          "None (Root)"
+                        )}
+                      </span>
+                    </div>
+                    
+                    <div className="flex flex-col text-[11px] space-y-1">
+                      <span className="text-[#64748B]">Sub-components:</span>
+                      {selectedObject.sub_components && selectedObject.sub_components.length > 0 ? (
+                        <div className="flex flex-wrap gap-1 pt-1">
+                          {selectedObject.sub_components.map((sub, i) => {
+                            const sObj = sceneGraph?.objects.find(o => o.id === sub);
+                            return (
+                              <span key={i} className="text-[9px] font-mono font-bold bg-[#E2E8F0] text-[#0F172A] px-1.5 py-0.5 rounded-full">
+                                {sObj ? sObj.class : sub.split("_").pop()}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <span className="text-[#94A3B8] italic">No sub-assemblies</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Physical Specifications (Phase 1) */}
+                <div className="p-3 rounded-2xl bg-white border border-[#E2E8F0] text-xs space-y-2">
+                  <div className="text-[#64748B] text-[10px] uppercase font-mono font-bold flex items-center gap-1.5">
+                    <SlidersHorizontal className="w-3.5 h-3.5 text-[#0EA5E9]" /> Spatial Specs
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-y-2 gap-x-4 font-mono text-[10px] text-[#0F172A]">
+                    <div className="flex flex-col">
+                      <span className="text-[#64748B] text-[9px] font-sans uppercase font-bold">Orientation</span>
+                      <span className="truncate">{selectedObject.surface_orientation || "N/A"}</span>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-[#64748B] text-[9px] font-sans uppercase font-bold">Reflectivity</span>
+                      <span>{selectedObject.reflectivity ?? 0.2}</span>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-[#64748B] text-[9px] font-sans uppercase font-bold">Roughness</span>
+                      <span>{selectedObject.roughness ?? 0.5}</span>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-[#64748B] text-[9px] font-sans uppercase font-bold">Normal Vec</span>
+                      <span className="truncate">
+                        {selectedObject.normal_vector 
+                          ? `[${selectedObject.normal_vector.nx.toFixed(1)}, ${selectedObject.normal_vector.ny.toFixed(1)}, ${selectedObject.normal_vector.nz.toFixed(1)}]`
+                          : "N/A"
+                        }
+                      </span>
+                    </div>
                   </div>
                 </div>
 

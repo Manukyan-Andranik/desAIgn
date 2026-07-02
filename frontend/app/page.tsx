@@ -73,19 +73,39 @@ export default function StudioPage() {
     setHoveredObjectId(null);
     setHistoryStack([]);
     setRedoStack([]);
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
   };
 
   const loadStudioProject = (id: string, nextRoomType?: string, nextDesignStyle?: string) => {
     setImageId(id);
     if (nextRoomType) setRoomType(nextRoomType);
     if (nextDesignStyle) setDesignStyle(nextDesignStyle);
+    
+    // Reset undo/redo history stacks and active polling intervals for the new project
+    setHistoryStack([]);
+    setRedoStack([]);
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+    
     fetchSceneGraph(id);
     if (typeof window !== "undefined") {
       const url = new URL(window.location.href);
+      const currentImage = new URLSearchParams(window.location.search).get("image");
       url.searchParams.set("image", id);
       if (nextRoomType) url.searchParams.set("room", nextRoomType);
       if (nextDesignStyle) url.searchParams.set("style", nextDesignStyle);
-      window.history.replaceState({ viewMode: "studio" }, "", `${url.pathname}${url.search}#studio`);
+      
+      // Push history if project switched, otherwise replace to avoid duplicate entries on load
+      if (currentImage && currentImage !== id) {
+        window.history.pushState({ viewMode: "studio" }, "", `${url.pathname}${url.search}#studio`);
+      } else {
+        window.history.replaceState({ viewMode: "studio" }, "", `${url.pathname}${url.search}#studio`);
+      }
     }
   };
 
@@ -122,24 +142,6 @@ export default function StudioPage() {
 
   useEffect(() => {
     setMounted(true);
-    if (typeof window !== "undefined") {
-      const hash = window.location.hash.replace("#", "") as any;
-      if (["home", "about", "pricing", "projects", "account", "studio"].includes(hash)) {
-        setViewMode(hash);
-      }
-      const handlePopState = (e: PopStateEvent) => {
-        if (e.state && e.state.viewMode) {
-          setViewMode(e.state.viewMode);
-        } else {
-          const currentHash = window.location.hash.replace("#", "") as any;
-          if (["home", "about", "pricing", "projects", "account", "studio"].includes(currentHash)) {
-            setViewMode(currentHash);
-          }
-        }
-      };
-      window.addEventListener("popstate", handlePopState);
-      return () => window.removeEventListener("popstate", handlePopState);
-    }
   }, []);
 
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null);
@@ -155,6 +157,7 @@ export default function StudioPage() {
   const historyStackRef = useRef<SceneGraph[]>([]);
   const redoStackRef = useRef<SceneGraph[]>([]);
   const sceneGraphRef = useRef<SceneGraph | null>(null);
+  const pollIntervalRef = useRef<any>(null);
 
   useEffect(() => {
     historyStackRef.current = historyStack;
@@ -193,6 +196,12 @@ export default function StudioPage() {
     const current = sceneGraphRef.current;
     if (history.length === 0 || !current) return;
 
+    // Clear any active background polling when reverting state to prevent race conditions
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+
     const previous = history[history.length - 1];
     const newHistory = history.slice(0, history.length - 1);
     const newRedo = [...redoStackRef.current, JSON.parse(JSON.stringify(current))];
@@ -208,6 +217,12 @@ export default function StudioPage() {
     const redo = redoStackRef.current;
     const current = sceneGraphRef.current;
     if (redo.length === 0 || !current) return;
+
+    // Clear any active background polling when reverting state to prevent race conditions
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
 
     const next = redo[redo.length - 1];
     const newRedo = redo.slice(0, redo.length - 1);
@@ -280,46 +295,64 @@ export default function StudioPage() {
   const [imageId, setImageId] = useState("");
   const [isInitialized, setIsInitialized] = useState(false);
 
-  // Restore State from localStorage on Mount
+  const syncStateFromUrl = () => {
+    if (typeof window === "undefined") return;
+    const hash = window.location.hash.replace("#", "") as "home" | "about" | "pricing" | "projects" | "account" | "studio" | "";
+    const params = new URLSearchParams(window.location.search);
+    const launchImageId = params.get("image") || "";
+    const launchRoom = params.get("room") || "";
+    const launchStyle = params.get("style") || "";
+
+    if (hash === "studio" || launchImageId) {
+      setViewMode("studio");
+      if (launchImageId) {
+        setImageId(launchImageId);
+        if (!sceneGraphRef.current || sceneGraphRef.current.image_id !== launchImageId) {
+          setHistoryStack([]);
+          setRedoStack([]);
+          
+          if (pollIntervalRef.current) {
+            clearInterval(pollIntervalRef.current);
+            pollIntervalRef.current = null;
+          }
+          
+          fetchSceneGraph(launchImageId);
+        }
+      } else {
+        clearStudioWorkspace();
+      }
+    } else if (["home", "about", "pricing", "projects", "account"].includes(hash)) {
+      setViewMode(hash as any);
+    } else {
+      const savedViewMode = localStorage.getItem("antigravity_viewMode");
+      if (savedViewMode && savedViewMode !== "studio") {
+        setViewMode(savedViewMode as any);
+      } else {
+        setViewMode("home");
+      }
+    }
+
+    if (launchRoom) setRoomType(launchRoom);
+    if (launchStyle) setDesignStyle(launchStyle);
+  };
+
+  // Restore State from localStorage on Mount and register popstate synchronization
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const hash = window.location.hash.replace("#", "");
-      const params = new URLSearchParams(window.location.search);
-      const launchImageId = params.get("image");
-      const launchRoom = params.get("room");
-      const launchStyle = params.get("style");
-
-      const savedViewMode = localStorage.getItem("antigravity_viewMode") as "home" | "studio";
-      const savedRoomType = localStorage.getItem("antigravity_roomType");
-      const savedDesignStyle = localStorage.getItem("antigravity_designStyle");
       const savedLeftWidth = localStorage.getItem("antigravity_leftWidth");
       const savedRightWidth = localStorage.getItem("antigravity_rightWidth");
-
-      if (hash === "studio" || launchImageId) {
-        setViewMode("studio");
-        if (launchImageId) {
-          setImageId(launchImageId);
-          fetchSceneGraph(launchImageId);
-        } else {
-          clearStudioWorkspace();
-          localStorage.removeItem("antigravity_imageId");
-        }
-      } else if (["home", "about", "pricing", "projects", "account"].includes(hash)) {
-        setViewMode(hash as typeof viewMode);
-      } else if (savedViewMode && savedViewMode !== "studio") {
-        setViewMode(savedViewMode);
-      }
-
-      if (launchRoom) setRoomType(launchRoom);
-      else if (savedRoomType) setRoomType(savedRoomType);
-
-      if (launchStyle) setDesignStyle(launchStyle);
-      else if (savedDesignStyle) setDesignStyle(savedDesignStyle);
 
       if (savedLeftWidth) setLeftWidth(parseInt(savedLeftWidth, 10));
       if (savedRightWidth) setRightWidth(parseInt(savedRightWidth, 10));
 
+      syncStateFromUrl();
       setIsInitialized(true);
+
+      const handlePopState = () => {
+        syncStateFromUrl();
+      };
+      window.addEventListener("popstate", handlePopState);
+      return () => window.removeEventListener("popstate", handlePopState);
     }
   }, []);
 
@@ -728,13 +761,45 @@ export default function StudioPage() {
       });
 
       // Background object detection is running on the newly generated image.
-      // Fetch the scene graph after 5s and 10s to pick up newly discovered objects.
-      setTimeout(() => {
-        if (imageId) fetchSceneGraph(imageId);
+      // Poll the scene graph dynamically to pick up newly discovered objects once finished.
+      const pollImageId = imageId;
+      const targetVersion = sceneGraph.version + 2; // +1 from orchestrator edit, +1 from background detection
+      let pollCount = 0;
+      const maxPolls = 8; // Poll every 5s for up to 40s (CPU pipeline takes ~15-25s to run)
+
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+      }
+
+      pollIntervalRef.current = setInterval(async () => {
+        pollCount++;
+        
+        // If the user switched projects, clear the interval
+        if (!imageId || imageId !== pollImageId) {
+          if (pollIntervalRef.current) {
+            clearInterval(pollIntervalRef.current);
+            pollIntervalRef.current = null;
+          }
+          return;
+        }
+
+        try {
+          const pollRes = await fetch(`${API_BASE}/api/v1/scene-graph/${pollImageId}`);
+          if (pollRes.ok) {
+            const data: SceneGraph = await pollRes.json();
+            // If background detection is complete (new version) or we hit max retries
+            if (data.version >= targetVersion || (data.objects && data.objects.length > 1) || pollCount >= maxPolls) {
+              setSceneGraph(data);
+              if (pollIntervalRef.current) {
+                clearInterval(pollIntervalRef.current);
+                pollIntervalRef.current = null;
+              }
+            }
+          }
+        } catch (err) {
+          console.error("Failed to poll scene graph in background:", err);
+        }
       }, 5000);
-      setTimeout(() => {
-        if (imageId) fetchSceneGraph(imageId);
-      }, 10000);
     }
   };
 

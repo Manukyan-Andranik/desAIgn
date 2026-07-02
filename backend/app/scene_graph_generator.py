@@ -34,6 +34,11 @@ class SceneGraphGenerator:
 
         log_action("SGG_START", f"Generating spatial relationships for {len(objects)} objects")
 
+        # Reset parent and sub_components before generating new relationships
+        for obj in objects:
+            obj.parent = "room_structure" if obj.object_class in {"wall", "floor", "ceiling", "window", "door"} else "floor"
+            obj.sub_components = []
+
         for i, obj_a in enumerate(objects):
             if not obj_a.bbox:
                 continue
@@ -83,6 +88,13 @@ class SceneGraphGenerator:
                         predicate = "in_front_of"
 
                 if predicate:
+                    if predicate in ["on", "mounted_on"]:
+                        obj_a.parent = obj_b.id
+                        if not obj_b.sub_components:
+                            obj_b.sub_components = []
+                        if obj_a.id not in obj_b.sub_components:
+                            obj_b.sub_components.append(obj_a.id)
+
                     rel = SceneRelationship(
                         subject_id=obj_a.id,
                         predicate=predicate,

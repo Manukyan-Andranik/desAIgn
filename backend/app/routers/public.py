@@ -651,6 +651,31 @@ def get_scene_graph_history(image_id: str, db: Session = Depends(get_db)):
     return output
 
 
+@router.get("/api/v1/scene-graph/{image_id}/object/{object_id}/history", response_model=list[HistoryItemSchema])
+def get_object_history(image_id: str, object_id: str, db: Session = Depends(get_db)):
+    """
+    Retrieves all logged orchestration/prompt history steps for a specific object inside the scene graph.
+    """
+    history_items = db.query(db_models.OrchestrationHistoryRecord).filter(
+        db_models.OrchestrationHistoryRecord.scene_graph_id == image_id,
+        db_models.OrchestrationHistoryRecord.target_id == object_id
+    ).order_by(db_models.OrchestrationHistoryRecord.created_at.asc()).all()
+
+    output = []
+    for item in history_items:
+        output.append(HistoryItemSchema(
+            id=item.id,
+            scene_graph_id=item.scene_graph_id,
+            target_id=item.target_id,
+            prompt=item.prompt,
+            action_type=item.action_type,
+            target_material=item.target_material,
+            image_url=item.image_url,
+            created_at=item.created_at
+        ))
+    return output
+
+
 @router.post("/api/v1/scene-graph/{image_id}/restore-url", response_model=SceneGraph)
 def restore_scene_graph_url(image_id: str, req: RestoreUrlRequest, db: Session = Depends(get_db)):
     """
@@ -699,6 +724,12 @@ def detect_objects_in_background(
         db = db_session_maker()
         try:
             log_action("BACKGROUND_DETECTION_START", f"Starting background object detection on '{image_id}'...")
+            
+            # Retrieve the current version from the database to increment monotonically
+            from app import db_models
+            current_sg = db.query(db_models.SceneGraphRecord).filter(db_models.SceneGraphRecord.id == image_id).first()
+            current_version = current_sg.version if current_sg else 1
+            
             new_scene_graph = process_uploaded_image(
                 file_bytes=file_bytes,
                 image_id=image_id,
@@ -706,8 +737,9 @@ def detect_objects_in_background(
                 room_type=room_type,
                 design_style=design_style
             )
+            new_scene_graph.version = current_version + 1
             save_scene_graph_to_db(db, new_scene_graph)
-            log_action("BACKGROUND_DETECTION_SUCCESS", f"Successfully re-detected objects for image '{image_id}' in background.")
+            log_action("BACKGROUND_DETECTION_SUCCESS", f"Successfully re-detected objects for image '{image_id}' in background. New version: {new_scene_graph.version}")
         finally:
             db.close()
     except Exception as e:

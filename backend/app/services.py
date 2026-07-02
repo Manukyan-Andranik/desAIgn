@@ -4,8 +4,70 @@ from app import db_models
 from app.models import SceneGraph, SceneObject, SceneRelationship, Point, NormalVector, MaskSegmentation
 from app.vision import generate_mock_scene_graph
 
+def calculate_iou(box_a, box_b):
+    if not box_a or not box_b:
+        return 0.0
+    xA = max(box_a[0], box_b[0])
+    yA = max(box_a[1], box_b[1])
+    xB = min(box_a[2], box_b[2])
+    yB = min(box_a[3], box_b[3])
+    
+    interArea = max(0, xB - xA) * max(0, yB - yA)
+    boxAArea = (box_a[2] - box_a[0]) * (box_a[3] - box_a[1])
+    boxBArea = (box_b[2] - box_b[0]) * (box_b[3] - box_b[1])
+    
+    unionArea = float(boxAArea + boxBArea - interArea)
+    if unionArea == 0:
+        return 0.0
+    return interArea / unionArea
+
 def save_scene_graph_to_db(db: Session, sg: SceneGraph) -> db_models.SceneGraphRecord:
     rec = db.query(db_models.SceneGraphRecord).filter(db_models.SceneGraphRecord.id == sg.image_id).first()
+    
+    # Load old object records to match and persist IDs
+    old_objects = db.query(db_models.SceneObjectRecord).filter(db_models.SceneObjectRecord.scene_graph_id == sg.image_id).all()
+    
+    # Reconcile new objects with old ones to maintain persistent IDs
+    if old_objects:
+        mapped_old_ids = set()
+        for new_obj in sg.objects:
+            if not new_obj.bbox:
+                continue
+            
+            best_match = None
+            best_iou = 0.0
+            
+            for old_obj in old_objects:
+                if old_obj.object_id in mapped_old_ids:
+                    continue
+                # Match class
+                if new_obj.object_class.lower() == old_obj.object_class.lower():
+                    iou = calculate_iou(new_obj.bbox, old_obj.bbox)
+                    if iou > 0.4 and iou > best_iou:
+                        best_match = old_obj
+                        best_iou = iou
+            
+            if best_match:
+                old_id = best_match.object_id
+                
+                # Re-map relationships from the temporary ID to the persistent ID
+                if sg.relationships:
+                    for rel in sg.relationships:
+                        if rel.subject_id == new_obj.id:
+                            rel.subject_id = old_id
+                        if rel.object_id == new_obj.id:
+                            rel.object_id = old_id
+                            
+                # Re-map hierarchy and sub-component values
+                for o_other in sg.objects:
+                    if o_other.parent == new_obj.id:
+                        o_other.parent = old_id
+                    if o_other.sub_components:
+                        o_other.sub_components = [old_id if sub == new_obj.id else sub for sub in o_other.sub_components]
+                
+                new_obj.id = old_id
+                mapped_old_ids.add(old_id)
+
     if not rec:
         rec = db_models.SceneGraphRecord(
             id=sg.image_id,

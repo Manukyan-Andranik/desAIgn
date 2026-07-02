@@ -102,3 +102,5 @@ lerna-debug.log*
 *.swo
 
 frontend/out.zip
+possible directions of development.md
+business/
